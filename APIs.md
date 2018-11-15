@@ -165,6 +165,52 @@ https://api.wiley.com/onlinelibrary/tdm/v1/articles/{doi}
 CR-Clickthrough-Client-Token: {orcidtoken}
 ```
 
+### Response
+
+* `HTTP/1.1 302 Redirect`
+
+```
+Date: Thu, 15 Nov 2018 15:27:14 GMT
+Content-Type: application/atom+xml;charset=utf-8
+Content-Length: 1281
+Connection: keep-alive
+Server: Apache-Coyote/1.1
+X-Varnish-CS: 1408629110 1408501204
+X-Cache-Hits-CS: 4
+Access-Control-Allow-Headers: Content-Type
+Access-Control-Allow-Origin: *
+x-usage-event: <?xml version="1.0" encoding="UTF-8" standalone="yes"?>...
+Access-Control-Allow-Methods: GET, POST, DELETE, PUT
+X-Cache-Action-CS: HIT
+Cache-Control: max-age=0
+Accept-Ranges: bytes
+X-Varnish: 1363693303
+Age: 0
+Via: 1.1 varnish
+X-Cache-Action: MISS
+CR-TDM-Rate-Limit: 60
+CR-TDM-Rate-Limit-Remaining: 59
+CR-TDM-Rate-Limit-Reset: 1542295993263
+Location: ...
+```
+
+* **FOLLOW!**
+
+```
+Set-Cookie: OLProdServerID=1024; domain=cochranelibrary-wiley.com; path=/
+Date: Thu, 15 Nov 2018 15:27:13 GMT
+Server: Apache
+Last-Modified: Tue, 15 Jun 2010 18:31:54 GMT
+ETag: "92706-1e107d-48915d1cc7a80"
+Accept-Ranges: bytes
+Content-Length: 1970301
+X-XSS-Protection: 1; mode=block
+X-Content-Type-Options: nosniff
+ServerID: olprodfe01.wiley.com
+Connection: close
+Content-Type: application/pdf
+```
+
 # IJSEM
 
 ## Landing page
