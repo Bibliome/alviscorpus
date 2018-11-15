@@ -129,6 +129,12 @@ http://ijs.microbiologyresearch.org/content/journal/ijsem/{doi}
 
 ## Full-text
 
+* Title: *INTERNATIONAL JOURNAL OF SYSTEMATIC AND EVOLUTIONARY MICROBIOLOGY*
+* eISSN: *1466-5034*
+* ISSN: *1466-5026*
+* Publisher: *Microbiology Society*
+
+            
 http://ijs.microbiologyresearch.org/deliver/fulltext/ijsem/{vol}/{issue}/{startpage}.html?itemId=/content/journal/ijsem/{doi}&mimeType=html&fmt=ahah
 
 Response Content:
