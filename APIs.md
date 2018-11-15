@@ -44,7 +44,7 @@ http://dtd.nlm.nih.gov/archiving/
 
 ## Query
 
-https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=...
+https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={query}
 
 ### Fields and sources
 
@@ -71,7 +71,7 @@ https://api.elsevier.com/content/article/pubmed_id/{pmid}
 ### Headers
 
 ```
-X-ELS-APIKey: ...
+X-ELS-APIKey: {apikey}
 ```
 
 ### XML Shemas
@@ -84,7 +84,7 @@ https://schema.elsevier.com/dtds/document/fulltext/xcr/
 
 https://dev.elsevier.com/documentation/SCIDIRSearchAPI.wadl
 
-https://api.elsevier.com/content/search/sciencedirect?query=...
+https://api.elsevier.com/content/search/sciencedirect?query={query}
 
 https://dev.elsevier.com/tips/ScienceDirectSearchTips.htm
 
@@ -92,7 +92,7 @@ https://dev.elsevier.com/tips/ScienceDirectSearchTips.htm
 
 ```
 Accept: application/xml
-X-ELS-APIKey: ...
+X-ELS-APIKey: {apikey}
 ```
 
 # Springer
@@ -118,7 +118,7 @@ https://api.wiley.com/onlinelibrary/tdm/v1/articles/{doi}
 ### Headers
 
 ```
-CR-Clickthrough-Client-Token: ...
+CR-Clickthrough-Client-Token: {orcidtoken}
 ```
 
 # IJSEM
