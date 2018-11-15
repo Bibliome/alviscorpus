@@ -28,6 +28,40 @@ https://api.crossref.org/journals/{issn}
 
 https://api.crossref.org/members/{id}
 
+## Misc query info
+
+### Return elements of interest
+
+https://api.crossref.org/works?{query}&select=URL,member,license,issue,prefix,article-number,DOI,alternative-id,publisher-location,link,title,type,publisher,volume,editor
+
+```json
+                "link": [
+                    {
+                        "URL": "http://api.elsevier.com/content/article/PII:S1726490109704435?httpAccept=text/xml",
+                        "content-type": "text/xml",
+                        "content-version": "vor",
+                        "intended-application": "text-mining"
+                    },
+                    {
+                        "URL": "http://api.elsevier.com/content/article/PII:S1726490109704435?httpAccept=text/plain",
+                        "content-type": "text/plain",
+                        "content-version": "vor",
+                        "intended-application": "text-mining"
+                    }
+```
+
+### Filters of interest
+
+https://api.crossref.org/works?filter=field:value,field:value
+
+* `has-full-text:t`
+* `full-text.type:text/xml` or `full-text.type:application/xml`
+* `license.url:http://creativecommons.org/licenses/by/3.0/`
+* `member:{publisherid}`
+* `doi:{doi}`
+* `type:journal-article`
+* `issn:{issn}`
+
 # PMC Europe
 
 ## Documentation
