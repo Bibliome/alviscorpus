@@ -63,7 +63,7 @@ https://api.crossref.org/members/{id}
 
 ### Return elements of interest
 
-https://api.crossref.org/works?{query}&select=URL,member,license,issue,prefix,article-number,DOI,alternative-id,publisher-location,link,title,type,publisher,volume,editor
+https://api.crossref.org/works?{query}&select=DOI,alternative-id,type,deposited,title,author,published-print,published-online,issn-type,container-title,short-container-title,volume,issue,page,member,publisher,editor,prefix,link,license
 
 ```json
                 "link": [
