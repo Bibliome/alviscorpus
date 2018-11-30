@@ -1,3 +1,14 @@
+| [Crossref](CrossRef.md)
+| [Elsevier](Elsevier.md)
+| [IJSEM](IJSEM.md)
+| [PMC Europe](EPMC.md)
+| [Springer](Springer.md)
+| [Wiley](Wiley.md)
+|
+
+* [Landing page](landing-page)
+* [Full-text](full-text)
+
 <header/>
 
 # IJSEM
@@ -15,7 +26,7 @@ http://ijs.microbiologyresearch.org/content/journal/ijsem/{doi}
   * DOI prefix: *10.1099*
   * Crossref id: *345*
 
-            
+
 http://ijs.microbiologyresearch.org/deliver/fulltext/ijsem/{vol}/{issue}/{startpage}.html?itemId=/content/journal/ijsem/{doi}&mimeType=html&fmt=ahah
 
 Response Content:

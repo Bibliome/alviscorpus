@@ -1,3 +1,23 @@
+| [Crossref](CrossRef.md)
+| [Elsevier](Elsevier.md)
+| [IJSEM](IJSEM.md)
+| [PMC Europe](EPMC.md)
+| [Springer](Springer.md)
+| [Wiley](Wiley.md)
+|
+
+* [Documentation](documentation)
+* [Document metadata (RAW)](document-metadata-raw)
+  * [Headers](headers)
+  * [Response](response)
+* [Document metadata (API)](document-metadata-api)
+* [DOI prefix metadata](doi-prefix-metadata)
+* [Journal metadata](journal-metadata)
+* [Publisher metadata](publisher-metadata)
+* [Misc query info](misc-query-info)
+  * [Return elements of interest](return-elements-of-interest)
+  * [Filters of interest](filters-of-interest)
+
 <header/>
 
 # Crossref
