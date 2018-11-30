@@ -40,13 +40,21 @@ https://api.elsevier.com/content/article/pii/{pii}
 
 https://api.elsevier.com/content/article/pubmed_id/{pmid}
 
-### Headers
+With header
 
 ```
 X-ELS-APIKey: {apikey}
 ```
 
-### XML Shemas
+### Example
+
+```
+curl -H 'X-ELS-APIKey: xxx' --proxy 'https://subscriberproxy.com' -U mememe 'https://api.elsevier.com/content/article/doi/10.1016/S0960-9822(99)80411-4'
+```
+
+### Response
+
+#### Schemas
 
 https://www.elsevier.com/authors/author-schemas/elsevier-xml-dtds-and-transport-schemas
 
