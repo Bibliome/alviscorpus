@@ -64,11 +64,11 @@ https://schema.elsevier.com/dtds/document/fulltext/xcr/
 
 https://dev.elsevier.com/documentation/SCIDIRSearchAPI.wadl
 
-https://api.elsevier.com/content/search/sciencedirect?query={query}
-
 https://dev.elsevier.com/tips/ScienceDirectSearchTips.htm
 
-### Headers
+https://api.elsevier.com/content/search/sciencedirect?query={query}
+
+With headers
 
 ```
 Accept: application/xml
