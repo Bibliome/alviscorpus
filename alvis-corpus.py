@@ -1,10 +1,28 @@
 import threading
-from Queue import Queue, Empty
+from queue import Queue, Empty
 import sys
 import time
 from math import ceil
 import logging
 from os import makedirs
+import os.path
+from configparser import ConfigParser
+from collections import defaultdict
+from urllib.parse import quote as urlquote
+import json
+
+
+LOGGER_ROOT = 'alviscorpus'
+CONFIG_GLOBAL = 'global'
+CONFIG_LOGGING = 'logging'
+CONFIG_OUTDIR = 'outdir'
+CONFIG_DOCS = 'documents'
+
+
+Config = ConfigParser(default_section=CONFIG_GLOBAL, interpolation=None)
+Config[CONFIG_GLOBAL][CONFIG_OUTDIR] = '.'
+Config.add_section(CONFIG_LOGGING)
+Config.add_section(CONFIG_DOCS)
 
 
 class LoggerConfig:
@@ -13,7 +31,7 @@ class LoggerConfig:
 
     @staticmethod
     def init():
-        logger = logging.getLogger('alviscorpus')
+        logger = logging.getLogger(LOGGER_ROOT)
         handler = logging.StreamHandler()
         handler.setLevel(logging.WARNING)
         handler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT, LoggerConfig.DATE_FORMAT))
@@ -21,9 +39,10 @@ class LoggerConfig:
 
     @staticmethod
     def logger(name):
-        result = logging.getLogger('alviscorpus.' + name)
-        dirpath = 'log' #XXX
-        #makedirs(dirpath)
+        result = logging.getLogger('%s.%s' % (LOGGER_ROOT, name))
+        dirpath = Config[CONFIG_LOGGING][CONFIG_OUTDIR]
+        if not os.path.exists(dirpath):
+            makedirs(dirpath)
         path = '%s/%s.log' % (dirpath, name)
         filehandler = logging.FileHandler(path, 'w')
         filehandler.setLevel(logging.DEBUG)
@@ -33,6 +52,32 @@ class LoggerConfig:
         return result
     
 
+class Document:
+    def __init__(self):
+        self.doi = None
+        self.data = defaultdict(dict)
+
+    def safe_doi(self):
+        if self.doi is None:
+            raise Exception()
+        return urlquote(self.doi)
+    
+    def get_dir(self):
+        if self.doi is None:
+            raise Exception()
+        outdir = Config[CONFIG_DOCS][CONFIG_OUTDIR]
+        return os.path.join(outdir, self.safe_doi())
+
+    def get_filename(self, ext):
+        basename = '%s.%s' % (self.safe_doi(), ext)
+        return os.path.join(self.get_dir(), basename)
+    
+    def dump_metadata(self):
+        outfile = self.get_filename('md.json')
+        with open(outfile) as f:
+            json.dump(self.data)
+
+    
 class Event:
     def __init__(self, ftor, args, kwargs):
         self.ftor = ftor
@@ -113,6 +158,7 @@ class RemainResetTest(Provider):
 def log(msg):
     RemainResetTest._singleton.logger.info(msg)
 
+Config.read('alvis-corpus.rc')
 LoggerConfig.init()
 for i in range(10):
     RemainResetTest.register(log, 'task: %d' % i)
