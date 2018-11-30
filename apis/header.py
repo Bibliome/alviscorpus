@@ -45,7 +45,7 @@ class MDFile:
                         self.title = title
                     elif lvl:
                         anchor = header_anchor(title)
-                        self.headers.append('%s* [%s](%s)' % (' '*((lvl-2)*2), title, anchor))
+                        self.headers.append('%s* [%s](#%s)' % (' '*((lvl-2)*2), title, anchor))
                     self.lines.append(line)
         if not header:
             raise Exception('no header in %s' % self.filename)

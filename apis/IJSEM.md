@@ -6,8 +6,8 @@
 | [Wiley](Wiley.md)
 |
 
-* [Landing page](landing-page)
-* [Full-text](full-text)
+* [Landing page](#landing-page)
+* [Full-text](#full-text)
 
 <header/>
 

@@ -6,8 +6,8 @@
 | [Wiley](Wiley.md)
 |
 
-* [Documentation](documentation)
-* [Full-text](full-text)
+* [Documentation](#documentation)
+* [Full-text](#full-text)
 
 <header/>
 

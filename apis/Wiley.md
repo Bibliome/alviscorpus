@@ -6,10 +6,10 @@
 | [Wiley](Wiley.md)
 |
 
-* [Documentation](documentation)
-* [Full-text](full-text)
-  * [Headers](headers)
-  * [Response](response)
+* [Documentation](#documentation)
+* [Full-text](#full-text)
+  * [Headers](#headers)
+  * [Response](#response)
 
 <header/>
 

@@ -6,12 +6,12 @@
 | [Wiley](Wiley.md)
 |
 
-* [Documentation](documentation)
-* [Full-text](full-text)
-  * [Headers](headers)
-  * [XML Shemas](xml-shemas)
-* [Search](search)
-  * [Headers](headers)
+* [Documentation](#documentation)
+* [Full-text](#full-text)
+  * [Headers](#headers)
+  * [XML Shemas](#xml-shemas)
+* [Search](#search)
+  * [Headers](#headers)
 
 <header/>
 

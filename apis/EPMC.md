@@ -6,11 +6,11 @@
 | [Wiley](Wiley.md)
 |
 
-* [Documentation](documentation)
-* [Full-text](full-text)
-  * [XML Schema](xml-schema)
-* [Query](query)
-  * [Fields and sources](fields-and-sources)
+* [Documentation](#documentation)
+* [Full-text](#full-text)
+  * [XML Schema](#xml-schema)
+* [Query](#query)
+  * [Fields and sources](#fields-and-sources)
 
 <header/>
 
