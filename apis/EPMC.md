@@ -6,6 +6,8 @@
 | [Wiley](Wiley.md)
 |
 
+---
+
 * [Documentation](#documentation)
 * [Full-text](#full-text)
   * [XML Schema](#xml-schema)

@@ -69,6 +69,6 @@ for mdf in MDFILES:
     mdf.read_lines()
 
 sys.stderr.write('building top menu\n')
-MENU = '| ' + '\n| '.join(('[%s](%s)' % (mdf.title, mdf.filename)) for mdf in sorted(MDFILES, key=operator.attrgetter('title'))) + '\n|\n'
+MENU = '| ' + '\n| '.join(('[%s](%s)' % (mdf.title, mdf.filename)) for mdf in sorted(MDFILES, key=operator.attrgetter('title'))) + '\n|\n\n---\n'
 for mdf in MDFILES:
     mdf.overwrite_file(MENU)

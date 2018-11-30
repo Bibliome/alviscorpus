@@ -6,6 +6,8 @@
 | [Wiley](Wiley.md)
 |
 
+---
+
 * [Documentation](#documentation)
 * [Document metadata (RAW)](#document-metadata-raw)
   * [Headers](#headers)
