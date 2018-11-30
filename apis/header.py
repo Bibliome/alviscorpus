@@ -25,6 +25,9 @@ def writelines(f, lines):
         f.write(line)
         f.write('\n')
 
+def hr(f):
+    f.write('\n---\n')
+        
 class MDFile:
     def __init__(self, filename):
         self.filename = filename
@@ -56,8 +59,10 @@ class MDFile:
         sys.stderr.write('overwriting %s\n' % self.filename)
         with open(self.filename, 'w') as f:
             f.write(menu)
+            hr(f)
             f.write('\n')
             writelines(f, self.headers)
+            hr(f)
             f.write('\n')
             writelines(f, self.lines)
 
@@ -69,6 +74,6 @@ for mdf in MDFILES:
     mdf.read_lines()
 
 sys.stderr.write('building top menu\n')
-MENU = '| ' + '\n| '.join(('[%s](%s)' % (mdf.title, mdf.filename)) for mdf in sorted(MDFILES, key=operator.attrgetter('title'))) + '\n|\n\n---\n'
+MENU = '| ' + '\n| '.join(('[%s](%s)' % (mdf.title, mdf.filename)) for mdf in sorted(MDFILES, key=operator.attrgetter('title'))) + '\n|\n'
 for mdf in MDFILES:
     mdf.overwrite_file(MENU)

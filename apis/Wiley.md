@@ -13,6 +13,8 @@
   * [Headers](#headers)
   * [Response](#response)
 
+---
+
 <header/>
 
 # Wiley

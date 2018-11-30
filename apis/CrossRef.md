@@ -20,6 +20,8 @@
   * [Return elements of interest](#return-elements-of-interest)
   * [Filters of interest](#filters-of-interest)
 
+---
+
 <header/>
 
 # Crossref

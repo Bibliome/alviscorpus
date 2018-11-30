@@ -14,6 +14,8 @@
 * [Query](#query)
   * [Fields and sources](#fields-and-sources)
 
+---
+
 <header/>
 
 # PMC Europe
