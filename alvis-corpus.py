@@ -57,6 +57,7 @@ class Document:
         self.local_id = str(uuid.uuid4())
         self.doi = None
         self.data = defaultdict(dict)
+        self.finished_steps = []
 
     def __str__(self):
         if self.doi is None:
@@ -131,7 +132,12 @@ class Provider(threading.Thread):
                 if delay > 0:
                     step.logger.warning('delay %ss' % str(delay))
                 time.sleep(delay)
-                next_name, next_arg = step.process(doc, arg)
+                try:
+                    next_name, next_arg = step.process(doc, arg)
+                except Exception as e:
+                    step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
+                    continue
+                doc.finished_steps.append(step.name)
                 if next_name is not None:
                     next_step = Step.get(next_name)
                     next_step.enqueue(doc, next_arg)
@@ -189,7 +195,8 @@ class TestStep2(Step):
         Step.__init__(self, 'step2', RemainResetTest)
 
     def process(self, doc, arg):
-        self.logger.info('redoing: %s (arg is %s)' % (doc, arg))
+        self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.finished_steps))
+        raise Exception()
         return None, None
 
 Config.read('alvis-corpus.rc')
