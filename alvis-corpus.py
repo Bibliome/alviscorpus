@@ -10,6 +10,7 @@ from configparser import ConfigParser
 from collections import defaultdict
 from urllib.parse import quote as urlquote
 import json
+import uuid
 
 
 LOGGER_ROOT = 'alviscorpus'
@@ -54,8 +55,14 @@ class LoggerConfig:
 
 class Document:
     def __init__(self):
+        self.local_id = str(uuid.uuid4())
         self.doi = None
         self.data = defaultdict(dict)
+
+    def __str__(self):
+        if self.doi is None:
+            return self.local_id
+        return self.doi
 
     def safe_doi(self):
         if self.doi is None:
@@ -77,17 +84,31 @@ class Document:
         with open(outfile) as f:
             json.dump(self.data)
 
+
+class Step:
+    REGISTRY = {}
     
-class Event:
-    def __init__(self, ftor, args, kwargs):
-        self.ftor = ftor
-        self.args = args
-        self.kwargs = kwargs
+    def __init__(self, name, provider):
+        if name in Step.REGISTRY:
+            raise Exception()
+        Step.REGISTRY[name] = self
+        self.name = name
+        self.logger = LoggerConfig.logger(name)
+        self.provider = provider
 
-    def process(self):
-        self.ftor(*self.args, **self.kwargs)
-
+    def enqueue(self, doc, arg=None):
+        self.provider.register(self, doc, arg)
         
+    def process(self, doc, arg=None):
+        raise NotImplemented()
+
+    @staticmethod
+    def get(name):
+        if name not in Step.REGISTRY:
+            raise Exception()
+        return Step.REGISTRY[name]
+
+
 class Provider(threading.Thread):
     _singleton = None
     
@@ -95,39 +116,38 @@ class Provider(threading.Thread):
         threading.Thread.__init__(self, name=self.__class__.__name__)
         self.queue = Queue()
         self.closed = False
-        self.logger = LoggerConfig.logger(self.__class__.__name__)
-        
+	#self.logger = LoggerConfig.logger(self.__class__.__name__)
+
     def run(self):
         try:
             while True:
                 try:
-                    event = self.queue.get_nowait()
+                    step, doc, arg = self.queue.get_nowait()
                 except Empty:
                     if self.closed:
-                        self.logger.info('closing queue')
+                        #self.logger.info('closing queue')
                         break
                     continue
                 delay = self.delay()
                 if delay > 0:
-                    self.logger.warning('delay %ss' % str(delay))
+                    step.logger.warning('delay %ss' % str(delay))
                 time.sleep(delay)
-                ret = event.process()
-                self.update(ret)
+                next_name, next_arg = step.process(doc, arg)
+                if next_name is not None:
+                    next_step = Step.get(next_name)
+                    next_step.enqueue(doc, next_arg)
         finally:
             pass
         
     def delay(self):
         raise NotImplemented()
-    
-    def update(self, headers):
-        raise NotImplemented()
 
     @classmethod
-    def register(cls, ftor, *args, **kwargs):
+    def register(cls, step, doc, arg=None):
         if cls._singleton is None:
             cls._singleton = cls()
             cls._singleton.start()
-        cls._singleton.queue.put(Event(ftor, args, kwargs))
+        cls._singleton.queue.put((step, doc, arg))
 
     @classmethod
     def close(cls):
@@ -148,19 +168,36 @@ class RemainResetTest(Provider):
             return 0
         now = time.time()
         if now > self.reset:
-            self.logger.error('past reset')
+            #self.logger.error('past reset')
             return 0
         return int(ceil(self.reset - time.time()))
 
-    def update(self, headers):
-        self.remain -= 1
+    @classmethod
+    def set_remain(cls, remain):
+        cls._singleton.remain = remain
+        
+class TestStep1(Step):
+    def __init__(self):
+        Step.__init__(self, 'step1', RemainResetTest)
 
-def log(msg):
-    RemainResetTest._singleton.logger.info(msg)
+    def process(self, doc, arg):
+        self.logger.info('doing: %s' % doc)
+        self.provider.set_remain(-1)
+        return 'step2', 'foo'
+
+class TestStep2(Step):
+    def __init__(self):
+        Step.__init__(self, 'step2', RemainResetTest)
+
+    def process(self, doc, arg):
+        self.logger.info('redoing: %s (arg is %s)' % (doc, arg))
+        return None, None
 
 Config.read('alvis-corpus.rc')
 LoggerConfig.init()
+step1 = TestStep1()
+step2 = TestStep2()
 for i in range(10):
-    RemainResetTest.register(log, 'task: %d' % i)
+    step1.enqueue(Document())
 RemainResetTest.close()
 
