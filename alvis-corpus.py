@@ -28,14 +28,13 @@ Config.add_section(CONFIG_DOCS)
 
 class LoggerConfig:
     MESSAGE_FORMAT = '[%(asctime)s][%(levelname)-8s][%(name)s] %(message)s'
-    DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
     @staticmethod
     def init():
         logger = logging.getLogger(LOGGER_ROOT)
         handler = logging.StreamHandler()
         handler.setLevel(logging.WARNING)
-        handler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT, LoggerConfig.DATE_FORMAT))
+        handler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT))
         logger.addHandler(handler)
 
     @staticmethod
@@ -47,7 +46,7 @@ class LoggerConfig:
         path = '%s/%s.log' % (dirpath, name)
         filehandler = logging.FileHandler(path, 'w')
         filehandler.setLevel(logging.DEBUG)
-        filehandler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT, LoggerConfig.DATE_FORMAT))
+        filehandler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT))
         result.addHandler(filehandler)
         result.setLevel(logging.DEBUG)
         return result
