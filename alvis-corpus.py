@@ -14,9 +14,7 @@ import uuid
 from enum import Enum
 
 
-
-
-class AlvisCorpusConfig(ConfigParser):
+class Config(ConfigParser):
     _singleton = None
     LOGGER_ROOT = 'alviscorpus'
     SECTION_GLOBAL = 'global'
@@ -28,44 +26,50 @@ class AlvisCorpusConfig(ConfigParser):
     LOGGER = None
     
     def __init__(self):
-        ConfigParser.__init__(self, default_section=AlvisCorpusConfig.SECTION_GLOBAL, interpolation=None)
-        self[AlvisCorpusConfig.SECTION_GLOBAL][AlvisCorpusConfig.OPT_OUTDIR] = '.'
-        self[AlvisCorpusConfig.SECTION_GLOBAL][AlvisCorpusConfig.OPT_REPORT_FILENAME] = 'report.txt'
-        self.add_section(AlvisCorpusConfig.SECTION_LOGGING)
-        self.add_section(AlvisCorpusConfig.SECTION_DOCS)
+        ConfigParser.__init__(self, default_section=Config.SECTION_GLOBAL, interpolation=None)
+        self[Config.SECTION_GLOBAL][Config.OPT_OUTDIR] = '.'
+        self[Config.SECTION_GLOBAL][Config.OPT_REPORT_FILENAME] = 'report.txt'
+        self.add_section(Config.SECTION_LOGGING)
+        self.add_section(Config.SECTION_DOCS)
 
     @staticmethod
     def load(filename):
-        return AlvisCorpusConfig._singleton.read(filename)
+        return Config._singleton.read(filename)
     
     @staticmethod
-    def val(section, name):
-        return AlvisCorpusConfig._singleton[section][name]
+    def val(arg1, arg2=None):
+        if arg2 is None:
+            section = Config.SECTION_GLOBAL
+            opt = arg1
+        else:
+            section = arg1
+            opt = arg2
+        return Config._singleton[section][opt]
 
     @staticmethod
     def init_logger():
-        logger = logging.getLogger(AlvisCorpusConfig.LOGGER_ROOT)
+        logger = logging.getLogger(Config.LOGGER_ROOT)
         handler = logging.StreamHandler()
         handler.setLevel(logging.WARNING)
-        handler.setFormatter(logging.Formatter(AlvisCorpusConfig.MESSAGE_FORMAT))
+        handler.setFormatter(logging.Formatter(Config.MESSAGE_FORMAT))
         logger.addHandler(handler)
-        AlvisCorpusConfig.LOGGER = AlvisCorpusConfig.logger('alviscorpus')
+        Config.LOGGER = Config.get_logger('alviscorpus')
 
     @staticmethod
-    def logger(name):
-        result = logging.getLogger('%s.%s' % (AlvisCorpusConfig.LOGGER_ROOT, name))
-        dirpath = AlvisCorpusConfig.val(AlvisCorpusConfig.SECTION_LOGGING, AlvisCorpusConfig.OPT_OUTDIR)
+    def get_logger(name):
+        result = logging.getLogger('%s.%s' % (Config.LOGGER_ROOT, name))
+        dirpath = Config.val(Config.SECTION_LOGGING, Config.OPT_OUTDIR)
         if not os.path.exists(dirpath):
             makedirs(dirpath)
         path = os.path.join(dirpath, name + '.log')
         filehandler = logging.FileHandler(path, 'w')
         filehandler.setLevel(logging.DEBUG)
-        filehandler.setFormatter(logging.Formatter(AlvisCorpusConfig.MESSAGE_FORMAT))
+        filehandler.setFormatter(logging.Formatter(Config.MESSAGE_FORMAT))
         result.addHandler(filehandler)
         result.setLevel(logging.DEBUG)
         return result
-AlvisCorpusConfig._singleton = AlvisCorpusConfig()
-    
+Config._singleton = Config()
+
 
 class Status(Enum):
     QUEUED = 'queued'
@@ -102,7 +106,7 @@ class Document:
     def get_dir(self):
         if self.doi is None:
             raise Exception()
-        outdir = AlvisCorpusConfig.get(AlvisCorpusConfig.SECTION_DOCS, AlvisCorpusConfig.OPT_OUTDIR)
+        outdir = Config.get(Config.SECTION_DOCS, Config.OPT_OUTDIR)
         return os.path.join(outdir, self.safe_doi())
 
     def get_filename(self, ext):
@@ -126,7 +130,7 @@ class Step:
             raise Exception()
         Step.REGISTRY[name] = self
         self.name = name
-        self.logger = AlvisCorpusConfig.logger(name)
+        self.logger = Config.get_logger(name)
         self.provider = provider
 
     def enqueue(self, doc, arg=None):
@@ -163,13 +167,13 @@ class Provider(threading.Thread):
         self.lock = threading.Lock()
 
     def run(self):
-        AlvisCorpusConfig.LOGGER.info('queue started: %s' % self.__class__.__name__)
+        Config.LOGGER.info('queue started: %s' % self.__class__.__name__)
         while True:
             try:
                 step, doc, arg = self.queue.get_nowait()
             except Empty:
                 if self.closed:
-                    AlvisCorpusConfig.LOGGER.info('queue closed: %s' % self.__class__.__name__)
+                    Config.LOGGER.info('queue closed: %s' % self.__class__.__name__)
                     break
                 time.sleep(0)
                 continue
@@ -230,8 +234,8 @@ class EndReportProvider(ConstantDelayProvider):
 class EndReportStep(Step):
     def __init__(self):
         Step.__init__(self, 'end', EndReportProvider)
-        outdir = AlvisCorpusConfig.val(AlvisCorpusConfig.SECTION_GLOBAL, AlvisCorpusConfig.OPT_OUTDIR)
-        filename = AlvisCorpusConfig.val(AlvisCorpusConfig.SECTION_GLOBAL, AlvisCorpusConfig.OPT_REPORT_FILENAME)
+        outdir = Config.val(Config.OPT_OUTDIR)
+        filename = Config.val(Config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
         self.handle = open(self.filepath, 'w')
 
@@ -258,7 +262,7 @@ class RemainResetTest(Provider):
             return 0
         now = time.time()
         if now > self.reset:
-            AlvisCorpusConfig.LOGGER.warning('%s reset in the past' % self.__class__.__name__)
+            Config.LOGGER.warning('%s reset in the past' % self.__class__.__name__)
             return 0
         return int(ceil(self.reset - time.time()))
 
@@ -284,8 +288,8 @@ class TestStep2(Step):
         #raise Exception()
         return 'end', None
 
-AlvisCorpusConfig.load('alvis-corpus.rc')
-AlvisCorpusConfig.init_logger()
+Config.load('alvis-corpus.rc')
+Config.init_logger()
 step1 = TestStep1()
 step2 = TestStep2()
 end_step = EndReportStep()
