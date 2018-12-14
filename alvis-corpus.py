@@ -7,10 +7,11 @@ import logging
 from os import makedirs
 import os.path
 from configparser import ConfigParser
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from urllib.parse import quote as urlquote
 import json
 import uuid
+from enum import Enum
 
 
 LOGGER_ROOT = 'alviscorpus'
@@ -18,10 +19,12 @@ CONFIG_GLOBAL = 'global'
 CONFIG_LOGGING = 'logging'
 CONFIG_OUTDIR = 'outdir'
 CONFIG_DOCS = 'documents'
+CONFIG_REPORT_FILENAME = 'report'
 
 
 Config = ConfigParser(default_section=CONFIG_GLOBAL, interpolation=None)
 Config[CONFIG_GLOBAL][CONFIG_OUTDIR] = '.'
+Config[CONFIG_GLOBAL][CONFIG_REPORT_FILENAME] = 'report.txt'
 Config.add_section(CONFIG_LOGGING)
 Config.add_section(CONFIG_DOCS)
 
@@ -36,6 +39,7 @@ class LoggerConfig:
         handler.setLevel(logging.WARNING)
         handler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT))
         logger.addHandler(handler)
+        LoggerConfig.GLOBAL = LoggerConfig.logger('alviscorpus.log')
 
     @staticmethod
     def logger(name):
@@ -43,7 +47,7 @@ class LoggerConfig:
         dirpath = Config[CONFIG_LOGGING][CONFIG_OUTDIR]
         if not os.path.exists(dirpath):
             makedirs(dirpath)
-        path = '%s/%s.log' % (dirpath, name)
+        path = os.path.join(dirpath, name + '.log')
         filehandler = logging.FileHandler(path, 'w')
         filehandler.setLevel(logging.DEBUG)
         filehandler.setFormatter(logging.Formatter(LoggerConfig.MESSAGE_FORMAT))
@@ -52,12 +56,27 @@ class LoggerConfig:
         return result
     
 
+class Status(Enum):
+    QUEUED = 'queued'
+    STARTED = 'started'
+    FINISHED = 'finished'
+    ERROR = 'error'
+
+    def __str__(self):
+        return self.value
+
+    
 class Document:
+    count = 0
+    lock = threading.Lock()
+    
     def __init__(self):
         self.local_id = str(uuid.uuid4())
         self.doi = None
         self.data = defaultdict(dict)
-        self.finished_steps = []
+        self.status = OrderedDict()
+        with Document.lock:
+            Document.count += 1
 
     def __str__(self):
         if self.doi is None:
@@ -84,6 +103,9 @@ class Document:
         with open(outfile) as f:
             json.dump(self.data)
 
+    def set_status(self, step, status):
+        self.status[step] = status
+
 
 class Step:
     REGISTRY = {}
@@ -98,6 +120,7 @@ class Step:
 
     def enqueue(self, doc, arg=None):
         self.provider.register(self, doc, arg)
+        doc.set_status(self.name, Status.QUEUED)
         
     def process(self, doc, arg=None):
         raise NotImplemented()
@@ -108,6 +131,16 @@ class Step:
             raise Exception()
         return Step.REGISTRY[name]
 
+    @staticmethod
+    def init_providers():
+        for step in Step.REGISTRY.values():
+            step.provider.init()
+
+    @staticmethod
+    def close_providers():
+        for step in Step.REGISTRY.values():
+            step.provider.close()
+
 
 class Provider(threading.Thread):
     _singleton = None
@@ -116,48 +149,90 @@ class Provider(threading.Thread):
         threading.Thread.__init__(self, name=self.__class__.__name__)
         self.queue = Queue()
         self.closed = False
-	#self.logger = LoggerConfig.logger(self.__class__.__name__)
+        self.lock = threading.Lock()
 
     def run(self):
-        try:
-            while True:
-                try:
-                    step, doc, arg = self.queue.get_nowait()
-                except Empty:
-                    if self.closed:
-                        #self.logger.info('closing queue')
-                        break
-                    continue
-                delay = self.delay()
-                if delay > 0:
-                    step.logger.warning('delay %ss' % str(delay))
-                time.sleep(delay)
-                try:
-                    next_name, next_arg = step.process(doc, arg)
-                except Exception as e:
-                    step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
-                    continue
-                doc.finished_steps.append(step.name)
-                if next_name is not None:
-                    next_step = Step.get(next_name)
-                    next_step.enqueue(doc, next_arg)
-        finally:
-            pass
+        LoggerConfig.GLOBAL.info('queue started: %s' % self.__class__.__name__)
+        while True:
+            try:
+                step, doc, arg = self.queue.get_nowait()
+            except Empty:
+                if self.closed:
+                    LoggerConfig.GLOBAL.info('queue closed: %s' % self.__class__.__name__)
+                    break
+                time.sleep(0)
+                continue
+            delay = self.delay()
+            if delay > 0:
+                step.logger.warning('delay %ss' % str(delay))
+            time.sleep(delay)
+            try:
+              doc.set_status(step.name, Status.STARTED)
+              next_name, next_arg = step.process(doc, arg)
+              doc.set_status(step.name, Status.FINISHED)
+            except Exception as e:
+                doc.set_status(step.name, Status.ERROR)
+                step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
+                end_report_step = Step.REGISTRY['end-report']
+                end_report_step.enqueue(doc, None)
+                continue
+            if next_name is not None:
+                next_step = Step.get(next_name)
+                next_step.enqueue(doc, next_arg)
         
     def delay(self):
         raise NotImplemented()
 
     @classmethod
-    def register(cls, step, doc, arg=None):
+    def init(cls):
         if cls._singleton is None:
             cls._singleton = cls()
             cls._singleton.start()
+
+    @classmethod
+    def register(cls, step, doc, arg=None):
+        if cls._singleton is None:
+            raise Exception('queue not started: %s' % cls.__name__)
         cls._singleton.queue.put((step, doc, arg))
 
     @classmethod
     def close(cls):
         if cls._singleton is not None:
-            cls._singleton.closed = True
+            with cls._singleton.lock:
+                cls._singleton.closed = True
+
+
+class ConstantDelayProvider(Provider):
+    def __init__(self, delay_value=0):
+        Provider.__init__(self)
+        self.delay_value = delay_value
+
+    def delay(self):
+        return self.delay_value
+
+
+class EndReportProvider(ConstantDelayProvider):
+    def __init__(self):
+        ConstantDelayProvider.__init__(self)
+
+
+class EndReportStep(Step):
+    def __init__(self):
+        Step.__init__(self, 'end-report', EndReportProvider)
+        outdir = Config[CONFIG_GLOBAL][CONFIG_OUTDIR]
+        filename = Config[CONFIG_GLOBAL][CONFIG_REPORT_FILENAME]
+        self.filepath = os.path.join(outdir, filename)
+        self.handle = open(self.filepath, 'w')
+
+    def process(self, doc, arg):
+        self.handle.write('%s\t%s\n' % (doc, ', '.join('%s: %s'%i for i in doc.status.items() if i[0] != self.name)))
+        self.handle.flush()
+        with Document.lock:
+            Document.count -= 1
+        if Document.count == 0:
+            Step.close_providers()
+        sys.stderr.write('finished: %s\n' % doc)
+        return None, None
 
 
 class RemainResetTest(Provider):
@@ -173,7 +248,7 @@ class RemainResetTest(Provider):
             return 0
         now = time.time()
         if now > self.reset:
-            #self.logger.error('past reset')
+            LoggerConfig.GLOBAL.warning('%s reset in the past' % self.__class__.__name__)
             return 0
         return int(ceil(self.reset - time.time()))
 
@@ -195,15 +270,16 @@ class TestStep2(Step):
         Step.__init__(self, 'step2', RemainResetTest)
 
     def process(self, doc, arg):
-        self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.finished_steps))
-        raise Exception()
-        return None, None
+        self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
+        #raise Exception()
+        return 'end-report', None
 
 Config.read('alvis-corpus.rc')
 LoggerConfig.init()
 step1 = TestStep1()
 step2 = TestStep2()
+end_step = EndReportStep()
+Step.init_providers()
 for i in range(10):
     step1.enqueue(Document())
-RemainResetTest.close()
 
