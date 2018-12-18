@@ -123,6 +123,7 @@ class Document:
 
 
 class Step:
+    END = 'end'
     REGISTRY = {}
     
     def __init__(self, name, provider):
@@ -188,7 +189,7 @@ class Provider(threading.Thread):
             except Exception as e:
                 doc.set_status(step.name, Status.ERROR)
                 step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
-                end_report_step = Step.REGISTRY['end']
+                end_report_step = Step.REGISTRY[Step.END]
                 end_report_step.enqueue(doc, None)
                 continue
             if next_name is not None:
@@ -237,7 +238,7 @@ class EndReportProvider(ConstantDelayProvider):
 
 class EndReportStep(Step):
     def __init__(self):
-        Step.__init__(self, 'end', EndReportProvider)
+        Step.__init__(self, Step.END, EndReportProvider)
         outdir = Config.val(Config.OPT_OUTDIR)
         filename = Config.val(Config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -321,7 +322,7 @@ class TestStep2(Step):
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
         #raise Exception()
-        return 'end', None
+        return Step.END, None
 
 Config.load('alvis-corpus.rc')
 Config.init_logger()
