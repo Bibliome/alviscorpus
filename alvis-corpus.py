@@ -56,7 +56,7 @@ class Config(ConfigParser):
         handler.setLevel(logging.WARNING)
         handler.setFormatter(logging.Formatter(Config.MESSAGE_FORMAT))
         logger.addHandler(handler)
-        Config.LOGGER = Config.get_logger('alviscorpus')
+        Config.LOGGER = Config.get_logger('alvis-corpus')
 
     @staticmethod
     def get_logger(name):
@@ -129,13 +129,13 @@ class Step:
     END = 'end'
     REGISTRY = {}
     
-    def __init__(self, name, provider):
+    def __init__(self, name, provider=None):
         if name in Step.REGISTRY:
             raise Exception()
         Step.REGISTRY[name] = self
         self.name = name
         self.logger = Config.get_logger(name)
-        self.provider = provider
+        self.provider = ProviderPool.get() if provider is None else provider
 
     def enqueue(self, doc, arg=None):
         self.provider.register(self, doc, arg)
@@ -261,7 +261,7 @@ class ProviderPool:
 
 class EndReportStep(Step):
     def __init__(self):
-        Step.__init__(self, Step.END, ProviderPool.get())
+        Step.__init__(self, Step.END)
         outdir = Config.val(Config.OPT_OUTDIR)
         filename = Config.val(Config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -368,7 +368,7 @@ class TestStep1(Step):
 
 class TestStep2(Step):
     def __init__(self):
-        Step.__init__(self, 'step2', ProviderPool.get())
+        Step.__init__(self, 'step2')
 
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
