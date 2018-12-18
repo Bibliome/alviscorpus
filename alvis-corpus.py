@@ -142,6 +142,14 @@ class Step:
         raise NotImplemented()
 
     @staticmethod
+    def pair(value):
+        try:
+            a, b = value
+            return value
+        except TypeError:
+            return value, None
+            
+    @staticmethod
     def get(name):
         if name not in Step.REGISTRY:
             raise Exception('unknown step: %s' % name)
@@ -226,7 +234,7 @@ class ConstantDelayProvider(Provider):
     def delay(self):
         return self.delay_value
 
-
+    
 #
 # end and report step
 #
@@ -265,14 +273,42 @@ class CheckDocumentDataProvider(ConstantDelayProvider):
 class CheckDOI(Step):
     def __init__(self, name, with_doi, without_doi):
         Step.__init__(self, name, CheckDocumentDataProvider)
-        self.with_doi = with_doi
-        self.without_doi = without_doi
+        self.with_doi = Step.pair(with_doi)
+        self.without_doi = Step.pair(without_doi)
 
     def process(self, doc, arg):
         if doc.doi is None:
-            return self.without_doi, None
-        return self.with_doi, None
+            return self.without_doi
+        return self.with_doi
 
+class CheckMetadata(Step):
+    def __init__(self, name, ns, field, without_ns, without_field, value_map, default):
+        Step.__init__(self, name, CheckDocumentDataProvider)
+        self.ns = ns
+        self.field = field
+        self.without_ns = Step.pair(without_ns)
+        self.without_field = Step.pair(without_field)
+        self.value_map = {} if value_map is None else dict((k, Step.pair(v)) for k,v in value_map.items())
+        self.default = Step.pair(default)
+
+    def process(self, doc, arg):
+        if self.ns not in doc.data:
+            return self.without_ns
+        if self.field is None:
+            return self.default
+        data = doc.data[self.ns]
+        if self.field not in data:
+            return self.without_field
+        value = data[self.field]
+        if value not in self.value_map:
+            return self.default
+        return self.value_map[value]
+
+def CheckMetadataNamespace(name, ns, with_ns, without_ns):
+    return CheckMetadata(name, ns, None, without_ns, None, None, with_ns)
+
+def CheckMetadataField(name, ns, field, with_field, without_field, without_ns):
+    return CheckMetadata(name, ns, field, without_ns, without_field, None, with_field)
 
 
 
