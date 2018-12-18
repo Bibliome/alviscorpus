@@ -226,6 +226,10 @@ class ConstantDelayProvider(Provider):
         return self.delay_value
 
 
+#
+# end and report step
+#
+
 class EndReportProvider(ConstantDelayProvider):
     def __init__(self):
         ConstantDelayProvider.__init__(self)
@@ -248,6 +252,37 @@ class EndReportStep(Step):
             Step.close_providers()
         return None, None
 
+
+#
+# check document data steps
+#
+
+class CheckDocumentDataProvider(ConstantDelayProvider):
+    def __init__(self):
+        ConstantDelayProvider.__init__(self)
+
+class CheckDOI(Step):
+    def __init__(self, name, with_doi, without_doi):
+        Step.__init__(self, name, CheckDocumentDataProvider)
+        self.with_doi = with_doi
+        self.without_doi = without_doi
+
+    def process(self, doc, arg):
+        if doc.doi is None:
+            return self.without_doi, None
+        return self.with_doi, None
+
+
+
+
+
+
+
+
+
+#
+# Test
+#
 
 class RemainResetTest(Provider):
     def __init__(self, remain=2, reset=time.time()+2):
