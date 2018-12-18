@@ -12,6 +12,7 @@ from urllib.parse import quote as urlquote
 import json
 import uuid
 from enum import Enum
+import itertools
 
 
 class Config(ConfigParser):
@@ -22,6 +23,7 @@ class Config(ConfigParser):
     SECTION_DOCS = 'documents'
     OPT_OUTDIR = 'outdir'
     OPT_REPORT_FILENAME = 'report'
+    OPT_THREAD_POOL = 'threads'
     MESSAGE_FORMAT = '[%(asctime)s][%(levelname)-8s][%(name)s] %(message)s'
     LOGGER = None
     
@@ -29,6 +31,7 @@ class Config(ConfigParser):
         ConfigParser.__init__(self, default_section=Config.SECTION_GLOBAL, interpolation=None)
         self[Config.SECTION_GLOBAL][Config.OPT_OUTDIR] = '.'
         self[Config.SECTION_GLOBAL][Config.OPT_REPORT_FILENAME] = 'report.txt'
+        self[Config.SECTION_GLOBAL][Config.OPT_THREAD_POOL] = '4'
         self.add_section(Config.SECTION_LOGGING)
         self.add_section(Config.SECTION_DOCS)
 
@@ -234,19 +237,31 @@ class ConstantDelayProvider(Provider):
     def delay(self):
         return self.delay_value
 
+
+class ProviderPool:
+    _instances = None
+
+    @staticmethod
+    def _ensure():
+        if ProviderPool._instances is None:
+            ctor = lambda self: ConstantDelayProvider.__init__(self, 0)
+            classes = [type('PoolProvider%02d' % i, (ConstantDelayProvider,), { '__init__': ctor }) for i in range(int(Config.val(Config.OPT_THREAD_POOL)))]
+            ProviderPool._instances = itertools.cycle(classes)
+
+    @staticmethod
+    def get():
+        ProviderPool._ensure()
+        return next(ProviderPool._instances)
+
     
 #
 # end and report step
 #
 
-class EndReportProvider(ConstantDelayProvider):
-    def __init__(self):
-        ConstantDelayProvider.__init__(self)
-
 
 class EndReportStep(Step):
     def __init__(self):
-        Step.__init__(self, Step.END, EndReportProvider)
+        Step.__init__(self, Step.END, ProviderPool.get())
         outdir = Config.val(Config.OPT_OUTDIR)
         filename = Config.val(Config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -353,7 +368,7 @@ class TestStep1(Step):
 
 class TestStep2(Step):
     def __init__(self):
-        Step.__init__(self, 'step2', RemainResetTest)
+        Step.__init__(self, 'step2', ProviderPool.get())
 
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
