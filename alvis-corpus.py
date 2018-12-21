@@ -13,6 +13,7 @@ import json
 import uuid
 from enum import Enum
 import itertools
+import requests
 
 
 class Config(ConfigParser):
@@ -38,16 +39,31 @@ class Config(ConfigParser):
     @staticmethod
     def load(filename):
         return Config._singleton.read(filename)
+
+    @staticmethod
+    def _sec_opt(arg1, arg2=None):
+        if arg2 is None:
+            return Config.SECTION_GLOBAL, arg1
+        return arg1, arg2
     
     @staticmethod
     def val(arg1, arg2=None):
-        if arg2 is None:
-            section = Config.SECTION_GLOBAL
-            opt = arg1
-        else:
-            section = arg1
-            opt = arg2
+        section, opt = Config._sec_opt(arg1, arg2)
         return Config._singleton[section][opt]
+
+    @staticmethod
+    def has(arg1, arg2=None):
+        section, opt = Config._sec_opt(arg1, arg2)
+        return Config._singleton.has_option(section, opt)
+
+    @staticmethod
+    def fill_defaults(section, opts):
+        if not Config._singleton.has_section(section):
+            Config._singleton.add_section(section)
+        sec = Config._singleton[section]
+        for k, v in opts.items():
+            if k not in sec:
+                sec[k] = v
 
     @staticmethod
     def init_logger():
@@ -169,6 +185,11 @@ class Step:
             step.provider.close()
 
 
+class StepException(Exception):
+    def __init__(self, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+        
+            
 class Provider(threading.Thread):
     _singleton = None
     
@@ -253,6 +274,25 @@ class ProviderPool:
         ProviderPool._ensure()
         return next(ProviderPool._instances)
 
+
+class LimitIntervalProvider(Provider):
+    def __init__(self, limit=None, interval=None):
+        Provider.__init__(self)
+        self.limit = limit
+        self.interval = interval
+        self.last = None
+
+    def delay(self):
+        if self.limit is None or self.interval is None or self.last is None:
+            self.last = time.time()
+            return 0
+        d = float(self.interval) / self.limit
+        r = self.last + d - time.time()
+        if r < 0:
+            r = 0
+        self.last = time.time() + r
+        return r
+
     
 #
 # end and report step
@@ -277,6 +317,8 @@ class EndReportStep(Step):
         return None, None
 
 
+    
+    
 #
 # check document data steps
 #
@@ -297,38 +339,83 @@ class CheckDOI(Step):
         return self.with_doi
 
 class CheckMetadata(Step):
-    def __init__(self, name, ns, field, without_ns, without_field, value_map, default):
+    def __init__(self, name, ns, field, with_field, without_field, without_ns):
         Step.__init__(self, name, CheckDocumentDataProvider)
         self.ns = ns
         self.field = field
-        self.without_ns = Step.pair(without_ns)
+        self.with_field = Step.pair(with_field)
         self.without_field = Step.pair(without_field)
-        self.value_map = {} if value_map is None else dict((k, Step.pair(v)) for k,v in value_map.items())
-        self.default = Step.pair(default)
+        self.without_ns = Step.pair(without_ns)
 
     def process(self, doc, arg):
         if self.ns not in doc.data:
             return self.without_ns
         if self.field is None:
-            return self.default
+            return self.with_field
         data = doc.data[self.ns]
         if self.field not in data:
             return self.without_field
-        value = data[self.field]
-        if value not in self.value_map:
-            return self.default
-        return self.value_map[value]
+        return self.with_field
 
 def CheckMetadataNamespace(name, ns, with_ns, without_ns):
-    return CheckMetadata(name, ns, None, without_ns, None, None, with_ns)
-
-def CheckMetadataField(name, ns, field, with_field, without_field, without_ns):
-    return CheckMetadata(name, ns, field, without_ns, without_field, None, with_field)
+    return CheckMetadata(name, ns, None, with_ns, None, without_ns)
 
 
+#
+# CrossRef
+#
 
+class CrossRefProvider(LimitIntervalProvider):
+    HEADER_LIMIT = 'X-Rate-Limit-Limit'
+    HEADER_INTERVAL = 'X-Rate-Limit-Interval'
+    SECTION_CROSSREF = 'crossref'
+    OPT_HOST = 'host'
+    VAL_HOST = 'api.crossref.org'
+    OPT_EMAIL = 'email'
+    
+    def __init__(self):
+        LimitIntervalProvider.__init__(self, 50, 1)
+        Config.fill_defaults(CrossRefProvider.SECTION_CROSSREF, {
+            CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
+        })
 
+    def update_limit_interval(self, headers):
+        if CrossRefProvider.HEADER_LIMIT in headers and CrossRefProvider.HEADER_INTERVAL in headers:
+            self.limit = int(headers[CrossRefProvider.HEADER_LIMIT])
+            self.interval = int(headers[CrossRefProvider.HEADER_INTERVAL][:-1])
 
+class CrossRef(Step):
+    def __init__(self, name, next_step, no_doi_step, not_found_step):
+        Step.__init__(self, name, CrossRefProvider)
+        self.next_step = Step.pair(next_step)
+        self.no_doi_step = Step.pair(no_doi_step)
+        self.not_found_step = Step.pair(not_found_step)
+
+    def process(self, doc, arg):
+        if doc.doi is None:
+            return self.no_doi_step
+        r = requests.get(
+            'https://%s/works/%s' % (Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST), doc.doi),
+            headers = {
+                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
+                'Accept': '*/*',
+                'Host': Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
+            },
+            auth=(lambda x: x)
+        )
+        self.logger.info('CrossRef request: %s' % r.url)
+        self.logger.info('CrossRef request headers: %s' % r.request.headers)
+        if r.status_code == 200:
+            doc.data['crossref'] = r.json()
+            self.provider._singleton.update_limit_interval(r.headers)
+            return self.next_step
+        if r.status_code == 404:
+            self.provider._singleton.update_limit_interval(r.headers)
+            return self.not_found_step
+        self.logger.error(r.text)
+        raise StepException('CrossRef server returned status %d' % r.status_code)
+
+    
 
 
 
@@ -373,14 +460,18 @@ class TestStep2(Step):
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
         #raise Exception()
-        return Step.END, None
+        return Step.END, 'ok'
 
 Config.load('alvis-corpus.rc')
 Config.init_logger()
 step1 = TestStep1()
 step2 = TestStep2()
+cr = CrossRef('crossref', (Step.END, 'ok'), (Step.END, 'cr-no-doi'), (Step.END, 'cr-not-found'))
 end_step = EndReportStep()
 Step.init_providers()
-for i in range(10):
-    step1.enqueue(Document())
+with open('test-doi.txt') as f:
+    for doi in f:
+        doc = Document()
+        doc.doi = doi.strip()
+        cr.enqueue(doc)
 
