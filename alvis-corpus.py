@@ -8,7 +8,7 @@ from os import makedirs
 import os.path
 from configparser import ConfigParser
 from collections import defaultdict, OrderedDict
-from urllib.parse import quote as urlquote
+from urllib.parse import quote as quote
 import json
 import uuid
 from enum import Enum
@@ -120,13 +120,16 @@ class Document:
     def safe_doi(self):
         if self.doi is None:
             raise Exception()
-        return urlquote(self.doi)
-    
+        return quote(self.doi, safe='')
+
     def get_dir(self):
         if self.doi is None:
             raise Exception()
-        outdir = Config.get(Config.SECTION_DOCS, Config.OPT_OUTDIR)
-        return os.path.join(outdir, self.safe_doi())
+        outdir = Config.val(Config.SECTION_DOCS, Config.OPT_OUTDIR)
+        r = os.path.join(outdir, self.safe_doi())
+        if not os.path.exists(r):
+            makedirs(r)
+        return r
 
     def get_filename(self, ext):
         basename = '%s.%s' % (self.safe_doi(), ext)
@@ -134,8 +137,8 @@ class Document:
     
     def dump_metadata(self):
         outfile = self.get_filename('md.json')
-        with open(outfile) as f:
-            json.dump(self.data)
+        with open(outfile, 'w') as f:
+            json.dump(self.data, f, indent=2)
 
     def set_status(self, step, status):
         self.status[step] = status
@@ -310,10 +313,12 @@ class EndReportStep(Step):
     def process(self, doc, arg):
         self.handle.write('%s\t%s\t%s\n' % (doc, ', '.join('%s: %s'%i for i in doc.status.items() if i[0] != self.name), arg))
         self.handle.flush()
+        doc.dump_metadata()
         with Document.lock:
             Document.count -= 1
         if Document.count == 0:
             Step.close_providers()
+            self.handle.close()
         return None, None
 
 
