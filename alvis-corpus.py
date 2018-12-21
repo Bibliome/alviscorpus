@@ -379,41 +379,89 @@ class CrossRefProvider(LimitIntervalProvider):
             CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
         })
 
-    def update_limit_interval(self, headers):
-        if CrossRefProvider.HEADER_LIMIT in headers and CrossRefProvider.HEADER_INTERVAL in headers:
-            self.limit = int(headers[CrossRefProvider.HEADER_LIMIT])
-            self.interval = int(headers[CrossRefProvider.HEADER_INTERVAL][:-1])
-
-class CrossRef(Step):
-    def __init__(self, name, next_step, no_doi_step, not_found_step):
+class CrossRefBase(Step):
+    _headers = None
+    
+    def __init__(self, name):
         Step.__init__(self, name, CrossRefProvider)
+
+    @staticmethod
+    def headers():
+        if CrossRefBase._headers is None:
+            CrossRefBase._headers = {
+                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
+                'Accept': '*/*',
+                'Host': Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
+            }
+        return CrossRefBase._headers
+
+    @staticmethod
+    def auth(h):
+        return h
+
+    @staticmethod
+    def update_limit_interval(headers):
+        if CrossRefProvider.HEADER_LIMIT in headers and CrossRefProvider.HEADER_INTERVAL in headers:
+            CrossRefProvider._singleton.limit = int(headers[CrossRefProvider.HEADER_LIMIT])
+            CrossRefProvider._singleton.interval = int(headers[CrossRefProvider.HEADER_INTERVAL][:-1])
+    
+    def process(self, doc, arg):
+        pre = self.pre_process(doc, arg)
+        if pre is not None:
+            return Step.pair(pre)
+        r = requests.get(
+            self.build_url(doc, arg),
+            headers=CrossRefBase.headers(),
+            auth=CrossRefBase.auth
+            )
+        self.logger.debug('CrossRef request: %s' % r.url)
+        self.logger.debug('CrossRef request headers: %s' % r.request.headers)
+        if r.status_code == 200:
+            next_step = self.handle_200(doc, arg, r.json())
+        elif r.status_code == 404:
+            next_step = self.handle_404(doc, arg, r.json())
+        else:
+            self.logger.error(r.text)
+            raise StepException('CrossRef server returned status %d' % r.status_code)
+        CrossRefBase.update_limit_interval(r.headers)
+        return Step.pair(next_step)
+
+    def build_url(self, doc, arg):
+        return 'https://' + Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST) + self.build_url_suffix(doc, arg)
+
+    def pre_process(self, doc, arg):
+        raise NotImplemented()
+    
+    def build_url_suffix(self, doc, arg):
+        raise NotImplemented()
+    
+    def handle_200(self, doc, arg, json):
+        raise NotImplemented()
+
+    def handle_404(self, doc, arg, json):
+        raise NotImplemented()
+        
+class CrossRef(CrossRefBase):
+    def __init__(self, name, next_step, no_doi_step, not_found_step):
+        CrossRefBase.__init__(self, name)
         self.next_step = Step.pair(next_step)
         self.no_doi_step = Step.pair(no_doi_step)
         self.not_found_step = Step.pair(not_found_step)
 
-    def process(self, doc, arg):
+    def pre_process(self, doc, arg):
         if doc.doi is None:
             return self.no_doi_step
-        r = requests.get(
-            'https://%s/works/%s' % (Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST), doc.doi),
-            headers = {
-                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
-                'Accept': '*/*',
-                'Host': Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
-            },
-            auth=(lambda x: x)
-        )
-        self.logger.info('CrossRef request: %s' % r.url)
-        self.logger.info('CrossRef request headers: %s' % r.request.headers)
-        if r.status_code == 200:
-            doc.data['crossref'] = r.json()
-            self.provider._singleton.update_limit_interval(r.headers)
-            return self.next_step
-        if r.status_code == 404:
-            self.provider._singleton.update_limit_interval(r.headers)
-            return self.not_found_step
-        self.logger.error(r.text)
-        raise StepException('CrossRef server returned status %d' % r.status_code)
+        return None
+
+    def build_url_suffix(self, doc, arg):
+        return '/works/' + doc.doi
+
+    def handle_200(self, doc, arg, json):
+        doc.data['crossref'] = json
+        return self.next_step
+
+    def handle_404(self, doc, arg, json):
+        return self.not_found_step
 
     
 
@@ -464,8 +512,6 @@ class TestStep2(Step):
 
 Config.load('alvis-corpus.rc')
 Config.init_logger()
-step1 = TestStep1()
-step2 = TestStep2()
 cr = CrossRef('crossref', (Step.END, 'ok'), (Step.END, 'cr-no-doi'), (Step.END, 'cr-not-found'))
 end_step = EndReportStep()
 Step.init_providers()
