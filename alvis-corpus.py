@@ -16,108 +16,7 @@ import itertools
 import requests
 import getpass
 
-
-class Config(configparser.ConfigParser):
-    _singleton = None
-    LOGGER_ROOT = 'alviscorpus'
-    SECTION_GLOBAL = 'global'
-    SECTION_LOGGING = 'logging'
-    SECTION_DOCS = 'documents'
-    SECTION_PROXIES = 'proxies'
-    OPT_OUTDIR = 'outdir'
-    OPT_REPORT_FILENAME = 'report'
-    OPT_THREAD_POOL = 'threads'
-    MESSAGE_FORMAT = '[%(asctime)s][%(levelname)-8s][%(name)s] %(message)s'
-    LOGGER = None
-    
-    def __init__(self):
-        configparser.ConfigParser.__init__(self, default_section=Config.SECTION_GLOBAL, interpolation=None)
-        self[Config.SECTION_GLOBAL][Config.OPT_OUTDIR] = '.'
-        self[Config.SECTION_GLOBAL][Config.OPT_REPORT_FILENAME] = 'report.txt'
-        self[Config.SECTION_GLOBAL][Config.OPT_THREAD_POOL] = '4'
-        self.add_section(Config.SECTION_LOGGING)
-        self.add_section(Config.SECTION_DOCS)
-        self.add_section(Config.SECTION_PROXIES)
-        self.proxies = {}
-
-    def _proxy(self, name):
-        if name not in self.proxies:
-            self.proxies[name] = { 'https': self._proxy_url(name) }
-        return self.proxies[name]
-
-    def _proxy_url(self, name):
-        sec = self[Config.PROXIES]
-        opt_host = name + '.host'
-        if opt_host not in sec:
-            raise Exception('no host for proxy ' + name)
-        host = sec[opt_host]
-        opt_user = name + '.user'
-        if opt_user in sec:
-            user = sec[opt_user]
-            opt_password = name + '.password'
-            if opt_password in sec:
-                password = sec[opt_password]
-            else:
-                password = getpass.getpass(prompt='Password for %s@%s :' % (user, host))
-            return 'https://%s:%s@%s' % (user, password, host)
-        return 'https://%s' % host
-
-    @staticmethod
-    def proxy(name):
-        return Config._singleton._proxy(name)
-        
-    @staticmethod
-    def load(filename):
-        return Config._singleton.read(filename)
-
-    @staticmethod
-    def _sec_opt(arg1, arg2=None):
-        if arg2 is None:
-            return Config.SECTION_GLOBAL, arg1
-        return arg1, arg2
-    
-    @staticmethod
-    def val(arg1, arg2=None):
-        section, opt = Config._sec_opt(arg1, arg2)
-        return Config._singleton[section][opt]
-
-    @staticmethod
-    def has(arg1, arg2=None):
-        section, opt = Config._sec_opt(arg1, arg2)
-        return Config._singleton.has_option(section, opt)
-
-    @staticmethod
-    def fill_defaults(section, opts):
-        if not Config._singleton.has_section(section):
-            Config._singleton.add_section(section)
-        sec = Config._singleton[section]
-        for k, v in opts.items():
-            if k not in sec:
-                sec[k] = v
-
-    @staticmethod
-    def init_logger():
-        logger = logging.getLogger(Config.LOGGER_ROOT)
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.WARNING)
-        handler.setFormatter(logging.Formatter(Config.MESSAGE_FORMAT))
-        logger.addHandler(handler)
-        Config.LOGGER = Config.get_logger('alvis-corpus')
-
-    @staticmethod
-    def get_logger(name):
-        result = logging.getLogger('%s.%s' % (Config.LOGGER_ROOT, name))
-        dirpath = Config.val(Config.SECTION_LOGGING, Config.OPT_OUTDIR)
-        if not os.path.exists(dirpath):
-            os.makedirs(dirpath)
-        path = os.path.join(dirpath, name + '.log')
-        filehandler = logging.FileHandler(path, 'w')
-        filehandler.setLevel(logging.DEBUG)
-        filehandler.setFormatter(logging.Formatter(Config.MESSAGE_FORMAT))
-        result.addHandler(filehandler)
-        result.setLevel(logging.DEBUG)
-        return result
-Config._singleton = Config()
+import alviscorpus.config as config
 
 
 class Status(enum.Enum):
@@ -155,7 +54,7 @@ class Document:
     def get_dir(self):
         if self.doi is None:
             raise Exception()
-        outdir = Config.val(Config.SECTION_DOCS, Config.OPT_OUTDIR)
+        outdir = config.val(config.SECTION_DOCS, config.OPT_OUTDIR)
         r = os.path.join(outdir, self.safe_doi())
         if not os.path.exists(r):
             os.makedirs(r)
@@ -183,7 +82,7 @@ class Step:
             raise Exception()
         Step.REGISTRY[name] = self
         self.name = name
-        self.logger = Config.get_logger(name)
+        self.logger = config.get_logger(name)
         self.provider = ProviderPool.get() if provider is None else provider
 
     def enqueue(self, doc, arg=None):
@@ -233,13 +132,13 @@ class Provider(threading.Thread):
         self.lock = threading.Lock()
 
     def run(self):
-        Config.LOGGER.info('queue started: %s' % self.__class__.__name__)
+        config.logger.info('queue started: %s' % self.__class__.__name__)
         while True:
             try:
                 step, doc, arg = self.queue.get_nowait()
             except queue.Empty:
                 if self.closed:
-                    Config.LOGGER.info('queue closed: %s' % self.__class__.__name__)
+                    config.logger.info('queue closed: %s' % self.__class__.__name__)
                     break
                 time.sleep(0)
                 continue
@@ -299,7 +198,7 @@ class ProviderPool:
     def _ensure():
         if ProviderPool._instances is None:
             ctor = lambda self: ConstantDelayProvider.__init__(self, 0)
-            classes = [type('PoolProvider%02d' % i, (ConstantDelayProvider,), { '__init__': ctor }) for i in range(int(Config.val(Config.OPT_THREAD_POOL)))]
+            classes = [type('PoolProvider%02d' % i, (ConstantDelayProvider,), { '__init__': ctor }) for i in range(int(config.val(config.OPT_THREAD_POOL)))]
             ProviderPool._instances = itertools.cycle(classes)
 
     @staticmethod
@@ -335,8 +234,8 @@ class LimitIntervalProvider(Provider):
 class EndReportStep(Step):
     def __init__(self):
         Step.__init__(self, Step.END)
-        outdir = Config.val(Config.OPT_OUTDIR)
-        filename = Config.val(Config.OPT_REPORT_FILENAME)
+        outdir = config.val(config.OPT_OUTDIR)
+        filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
         self.handle = open(self.filepath, 'w')
 
@@ -411,7 +310,7 @@ class CrossRefProvider(LimitIntervalProvider):
     
     def __init__(self):
         LimitIntervalProvider.__init__(self, 50, 1)
-        Config.fill_defaults(CrossRefProvider.SECTION_CROSSREF, {
+        config.fill_defaults(CrossRefProvider.SECTION_CROSSREF, {
             CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
         })
 
@@ -426,18 +325,18 @@ class CrossRefBase(Step):
     def headers():
         if CrossRefBase._headers is None:
             CrossRefBase._headers = {
-                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
+                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
                 'Accept': '*/*',
-                'Host': Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
+                'Host': config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
             }
         return CrossRefBase._headers
 
     @staticmethod
     def proxy():
         if CrossRefBase._proxy is None:
-            if Config.has(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY):
-                proxy_name = Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY)
-                CrossRefBase._proxy = Config.proxy(proxy_name)
+            if config.has(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY):
+                proxy_name = config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY)
+                CrossRefBase._proxy = config.proxy(proxy_name)
             else:
                 CrossRefBase._proxy = {}
         return CrossRefBase._proxy
@@ -475,7 +374,7 @@ class CrossRefBase(Step):
         return Step.pair(next_step)
 
     def build_url(self, doc, arg):
-        return 'https://' + Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST) + self.build_url_suffix(doc, arg)
+        return 'https://' + config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST) + self.build_url_suffix(doc, arg)
 
     def pre_process(self, doc, arg):
         raise NotImplemented()
@@ -532,7 +431,7 @@ class RemainResetTest(Provider):
             return 0
         now = time.time()
         if now > self.reset:
-            Config.LOGGER.warning('%s reset in the past' % self.__class__.__name__)
+            config.logger.warning('%s reset in the past' % self.__class__.__name__)
             return 0
         return int(math.ceil(self.reset - time.time()))
 
@@ -558,8 +457,8 @@ class TestStep2(Step):
         #raise Exception()
         return Step.END, 'ok'
 
-Config.load('alvis-corpus.rc')
-Config.init_logger()
+config.load('alvis-corpus.rc')
+config.init_logger()
 cr = CrossRef('crossref', (Step.END, 'ok'), (Step.END, 'cr-no-doi'), (Step.END, 'cr-not-found'))
 end_step = EndReportStep()
 Step.init_providers()
