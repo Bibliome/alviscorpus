@@ -1,27 +1,29 @@
 import threading
-from queue import Queue, Empty
+import queue
 import sys
 import time
-from math import ceil
+import math
 import logging
-from os import makedirs
+import os
 import os.path
-from configparser import ConfigParser
-from collections import defaultdict, OrderedDict
-from urllib.parse import quote as quote
+import configparser
+import collections
+import urllib.parse
 import json
 import uuid
-from enum import Enum
+import enum
 import itertools
 import requests
+import getpass
 
 
-class Config(ConfigParser):
+class Config(configparser.ConfigParser):
     _singleton = None
     LOGGER_ROOT = 'alviscorpus'
     SECTION_GLOBAL = 'global'
     SECTION_LOGGING = 'logging'
     SECTION_DOCS = 'documents'
+    SECTION_PROXIES = 'proxies'
     OPT_OUTDIR = 'outdir'
     OPT_REPORT_FILENAME = 'report'
     OPT_THREAD_POOL = 'threads'
@@ -29,13 +31,41 @@ class Config(ConfigParser):
     LOGGER = None
     
     def __init__(self):
-        ConfigParser.__init__(self, default_section=Config.SECTION_GLOBAL, interpolation=None)
+        configparser.ConfigParser.__init__(self, default_section=Config.SECTION_GLOBAL, interpolation=None)
         self[Config.SECTION_GLOBAL][Config.OPT_OUTDIR] = '.'
         self[Config.SECTION_GLOBAL][Config.OPT_REPORT_FILENAME] = 'report.txt'
         self[Config.SECTION_GLOBAL][Config.OPT_THREAD_POOL] = '4'
         self.add_section(Config.SECTION_LOGGING)
         self.add_section(Config.SECTION_DOCS)
+        self.add_section(Config.SECTION_PROXIES)
+        self.proxies = {}
 
+    def _proxy(self, name):
+        if name not in self.proxies:
+            self.proxies[name] = { 'https': self._proxy_url(name) }
+        return self.proxies[name]
+
+    def _proxy_url(self, name):
+        sec = self[Config.PROXIES]
+        opt_host = name + '.host'
+        if opt_host not in sec:
+            raise Exception('no host for proxy ' + name)
+        host = sec[opt_host]
+        opt_user = name + '.user'
+        if opt_user in sec:
+            user = sec[opt_user]
+            opt_password = name + '.password'
+            if opt_password in sec:
+                password = sec[opt_password]
+            else:
+                password = getpass.getpass(prompt='Password for %s@%s :' % (user, host))
+            return 'https://%s:%s@%s' % (user, password, host)
+        return 'https://%s' % host
+
+    @staticmethod
+    def proxy(name):
+        return Config._singleton._proxy(name)
+        
     @staticmethod
     def load(filename):
         return Config._singleton.read(filename)
@@ -79,7 +109,7 @@ class Config(ConfigParser):
         result = logging.getLogger('%s.%s' % (Config.LOGGER_ROOT, name))
         dirpath = Config.val(Config.SECTION_LOGGING, Config.OPT_OUTDIR)
         if not os.path.exists(dirpath):
-            makedirs(dirpath)
+            os.makedirs(dirpath)
         path = os.path.join(dirpath, name + '.log')
         filehandler = logging.FileHandler(path, 'w')
         filehandler.setLevel(logging.DEBUG)
@@ -90,7 +120,7 @@ class Config(ConfigParser):
 Config._singleton = Config()
 
 
-class Status(Enum):
+class Status(enum.Enum):
     QUEUED = 'queued'
     STARTED = 'started'
     FINISHED = 'finished'
@@ -107,8 +137,8 @@ class Document:
     def __init__(self):
         self.local_id = str(uuid.uuid4())
         self.doi = None
-        self.data = defaultdict(dict)
-        self.status = OrderedDict()
+        self.data = collections.defaultdict(dict)
+        self.status = collections.OrderedDict()
         with Document.lock:
             Document.count += 1
 
@@ -120,7 +150,7 @@ class Document:
     def safe_doi(self):
         if self.doi is None:
             raise Exception()
-        return quote(self.doi, safe='')
+        return urllib.parse.quote(self.doi, safe='')
 
     def get_dir(self):
         if self.doi is None:
@@ -128,7 +158,7 @@ class Document:
         outdir = Config.val(Config.SECTION_DOCS, Config.OPT_OUTDIR)
         r = os.path.join(outdir, self.safe_doi())
         if not os.path.exists(r):
-            makedirs(r)
+            os.makedirs(r)
         return r
 
     def get_filename(self, ext):
@@ -198,7 +228,7 @@ class Provider(threading.Thread):
     
     def __init__(self):
         threading.Thread.__init__(self, name=self.__class__.__name__)
-        self.queue = Queue()
+        self.queue = queue.Queue()
         self.closed = False
         self.lock = threading.Lock()
 
@@ -207,7 +237,7 @@ class Provider(threading.Thread):
         while True:
             try:
                 step, doc, arg = self.queue.get_nowait()
-            except Empty:
+            except queue.Empty:
                 if self.closed:
                     Config.LOGGER.info('queue closed: %s' % self.__class__.__name__)
                     break
@@ -377,6 +407,7 @@ class CrossRefProvider(LimitIntervalProvider):
     OPT_HOST = 'host'
     VAL_HOST = 'api.crossref.org'
     OPT_EMAIL = 'email'
+    OPT_PROXY = 'proxy'
     
     def __init__(self):
         LimitIntervalProvider.__init__(self, 50, 1)
@@ -386,6 +417,7 @@ class CrossRefProvider(LimitIntervalProvider):
 
 class CrossRefBase(Step):
     _headers = None
+    _proxy = None
     
     def __init__(self, name):
         Step.__init__(self, name, CrossRefProvider)
@@ -400,6 +432,16 @@ class CrossRefBase(Step):
             }
         return CrossRefBase._headers
 
+    @staticmethod
+    def proxy():
+        if CrossRefBase._proxy is None:
+            if Config.has(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY):
+                proxy_name = Config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY)
+                CrossRefBase._proxy = Config.proxy(proxy_name)
+            else:
+                CrossRefBase._proxy = {}
+        return CrossRefBase._proxy
+                
     @staticmethod
     def auth(h):
         return h
@@ -417,8 +459,9 @@ class CrossRefBase(Step):
         r = requests.get(
             self.build_url(doc, arg),
             headers=CrossRefBase.headers(),
-            auth=CrossRefBase.auth
-            )
+            auth=CrossRefBase.auth,
+            proxies=CrossRefBase.proxy()
+        )
         self.logger.debug('CrossRef request: %s' % r.url)
         self.logger.debug('CrossRef request headers: %s' % r.request.headers)
         if r.status_code == 200:
@@ -491,7 +534,7 @@ class RemainResetTest(Provider):
         if now > self.reset:
             Config.LOGGER.warning('%s reset in the past' % self.__class__.__name__)
             return 0
-        return int(ceil(self.reset - time.time()))
+        return int(math.ceil(self.reset - time.time()))
 
     @classmethod
     def set_remain(cls, remain):
