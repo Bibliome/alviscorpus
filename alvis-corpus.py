@@ -17,77 +17,27 @@ import requests
 import getpass
 
 import alviscorpus.config as config
-
-
-class Status(enum.Enum):
-    QUEUED = 'queued'
-    STARTED = 'started'
-    FINISHED = 'finished'
-    ERROR = 'error'
-
-    def __str__(self):
-        return self.value
+import alviscorpus.status as status
+import alviscorpus.document as document
 
     
-class Document:
-    count = 0
-    lock = threading.Lock()
-    
-    def __init__(self):
-        self.local_id = str(uuid.uuid4())
-        self.doi = None
-        self.data = collections.defaultdict(dict)
-        self.status = collections.OrderedDict()
-        with Document.lock:
-            Document.count += 1
-
-    def __str__(self):
-        if self.doi is None:
-            return self.local_id
-        return self.doi
-
-    def safe_doi(self):
-        if self.doi is None:
-            raise Exception()
-        return urllib.parse.quote(self.doi, safe='')
-
-    def get_dir(self):
-        if self.doi is None:
-            raise Exception()
-        outdir = config.val(config.SECTION_DOCS, config.OPT_OUTDIR)
-        r = os.path.join(outdir, self.safe_doi())
-        if not os.path.exists(r):
-            os.makedirs(r)
-        return r
-
-    def get_filename(self, ext):
-        basename = '%s.%s' % (self.safe_doi(), ext)
-        return os.path.join(self.get_dir(), basename)
-    
-    def dump_metadata(self):
-        outfile = self.get_filename('md.json')
-        with open(outfile, 'w') as f:
-            json.dump(self.data, f, indent=2)
-
-    def set_status(self, step, status):
-        self.status[step] = status
 
 
 class Step:
     END = 'end'
     REGISTRY = {}
     
-    def __init__(self, name, provider=None):
+    def __init__(self, name, provider):
         if name in Step.REGISTRY:
             raise Exception()
         Step.REGISTRY[name] = self
         self.name = name
         self.logger = config.get_logger(name)
-        self.provider = ProviderPool.get() if provider is None else provider
+        self.provider = provider
 
     def enqueue(self, doc, arg=None):
         self.provider.register(self, doc, arg)
-        doc.set_status(self.name, Status.QUEUED)
+        doc.set_status(self.name, status.QUEUED)
         
     def process(self, doc, arg=None):
         raise NotImplemented()
@@ -147,11 +97,11 @@ class Provider(threading.Thread):
                 step.logger.warning('delay %ss' % str(delay))
             time.sleep(delay)
             try:
-              doc.set_status(step.name, Status.STARTED)
+              doc.set_status(step.name, status.STARTED)
               next_name, next_arg = step.process(doc, arg)
-              doc.set_status(step.name, Status.FINISHED)
+              doc.set_status(step.name, status.FINISHED)
             except Exception as e:
-                doc.set_status(step.name, Status.ERROR)
+                doc.set_status(step.name, status.ERROR)
                 step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
                 end_report_step = Step.REGISTRY[Step.END]
                 end_report_step.enqueue(doc, None)
@@ -233,7 +183,7 @@ class LimitIntervalProvider(Provider):
 
 class EndReportStep(Step):
     def __init__(self):
-        Step.__init__(self, Step.END)
+        Step.__init__(self, Step.END, ProviderPool.get())
         outdir = config.val(config.OPT_OUTDIR)
         filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -243,9 +193,7 @@ class EndReportStep(Step):
         self.handle.write('%s\t%s\t%s\n' % (doc, ', '.join('%s: %s'%i for i in doc.status.items() if i[0] != self.name), arg))
         self.handle.flush()
         doc.dump_metadata()
-        with Document.lock:
-            Document.count -= 1
-        if Document.count == 0:
+        if document.decr():
             Step.close_providers()
             self.handle.close()
         return None, None
@@ -464,7 +412,7 @@ end_step = EndReportStep()
 Step.init_providers()
 with open('test-doi.txt') as f:
     for doi in f:
-        doc = Document()
+        doc = document.Document()
         doc.doi = doi.strip()
         cr.enqueue(doc)
 
