@@ -20,113 +20,8 @@ import alviscorpus.config as config
 import alviscorpus.status as status
 import alviscorpus.document as document
 import alviscorpus.step as step
-    
+import alviscorpus.provider as provider    
 
-
-        
-            
-class Provider(threading.Thread):
-    _singleton = None
-    
-    def __init__(self):
-        threading.Thread.__init__(self, name=self.__class__.__name__)
-        self.queue = queue.Queue()
-        self.closed = False
-        self.lock = threading.Lock()
-
-    def run(self):
-        config.logger.info('queue started: %s' % self.__class__.__name__)
-        while True:
-            try:
-                thestep, doc, arg = self.queue.get_nowait()
-            except queue.Empty:
-                if self.closed:
-                    config.logger.info('queue closed: %s' % self.__class__.__name__)
-                    break
-                time.sleep(0)
-                continue
-            delay = self.delay()
-            if delay > 0:
-                thestep.logger.warning('delay %ss' % str(delay))
-            time.sleep(delay)
-            try:
-              doc.set_status(thestep.name, status.STARTED)
-              next_name, next_arg = thestep.process(doc, arg)
-              doc.set_status(thestep.name, status.FINISHED)
-            except Exception as e:
-                doc.set_status(thestep.name, status.ERROR)
-                thestep.logger.warning('exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
-                end_report_step = step.get(step.END)
-                end_report_step.enqueue(doc, None)
-                continue
-            if next_name is not None:
-                next_step = step.get(next_name)
-                next_step.enqueue(doc, next_arg)
-        
-    def delay(self):
-        raise NotImplemented()
-
-    @classmethod
-    def init(cls):
-        if cls._singleton is None:
-            cls._singleton = cls()
-            cls._singleton.start()
-
-    @classmethod
-    def register(cls, step, doc, arg=None):
-        if cls._singleton is None:
-            raise Exception('queue not started: %s' % cls.__name__)
-        cls._singleton.queue.put((step, doc, arg))
-
-    @classmethod
-    def close(cls):
-        if cls._singleton is not None:
-            with cls._singleton.lock:
-                cls._singleton.closed = True
-
-
-class ConstantDelayProvider(Provider):
-    def __init__(self, delay_value=0):
-        Provider.__init__(self)
-        self.delay_value = delay_value
-
-    def delay(self):
-        return self.delay_value
-
-
-class ProviderPool:
-    _instances = None
-
-    @staticmethod
-    def _ensure():
-        if ProviderPool._instances is None:
-            ctor = lambda self: ConstantDelayProvider.__init__(self, 0)
-            classes = [type('PoolProvider%02d' % i, (ConstantDelayProvider,), { '__init__': ctor }) for i in range(int(config.val(config.OPT_THREAD_POOL)))]
-            ProviderPool._instances = itertools.cycle(classes)
-
-    @staticmethod
-    def get():
-        ProviderPool._ensure()
-        return next(ProviderPool._instances)
-
-
-class LimitIntervalProvider(Provider):
-    def __init__(self, limit=None, interval=None):
-        Provider.__init__(self)
-        self.limit = limit
-        self.interval = interval
-        self.last = None
-
-    def delay(self):
-        if self.limit is None or self.interval is None or self.last is None:
-            self.last = time.time()
-            return 0
-        d = float(self.interval) / self.limit
-        r = self.last + d - time.time()
-        if r < 0:
-            r = 0
-        self.last = time.time() + r
-        return r
 
     
 #
@@ -136,7 +31,7 @@ class LimitIntervalProvider(Provider):
 
 class EndReportStep(step.Step):
     def __init__(self):
-        step.Step.__init__(self, step.END, ProviderPool.get())
+        step.Step.__init__(self, step.END, provider.pool())
         outdir = config.val(config.OPT_OUTDIR)
         filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -158,9 +53,9 @@ class EndReportStep(step.Step):
 # check document data steps
 #
 
-class CheckDocumentDataProvider(ConstantDelayProvider):
+class CheckDocumentDataProvider(provider.ConstantDelayProvider):
     def __init__(self):
-        ConstantDelayProvider.__init__(self)
+        provider.ConstantDelayProvider.__init__(self)
 
 class CheckDOI(step.Step):
     def __init__(self, name, with_doi, without_doi):
@@ -200,7 +95,7 @@ def CheckMetadataNamespace(name, ns, with_ns, without_ns):
 # CrossRef
 #
 
-class CrossRefProvider(LimitIntervalProvider):
+class CrossRefProvider(provider.LimitIntervalProvider):
     HEADER_LIMIT = 'X-Rate-Limit-Limit'
     HEADER_INTERVAL = 'X-Rate-Limit-Interval'
     SECTION_CROSSREF = 'crossref'
@@ -210,7 +105,7 @@ class CrossRefProvider(LimitIntervalProvider):
     OPT_PROXY = 'proxy'
     
     def __init__(self):
-        LimitIntervalProvider.__init__(self, 50, 1)
+        provider.LimitIntervalProvider.__init__(self, 50, 1)
         config.fill_defaults(CrossRefProvider.SECTION_CROSSREF, {
             CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
         })
@@ -319,9 +214,9 @@ class CrossRef(CrossRefBase):
 # Test
 #
 
-class RemainResetTest(Provider):
+class RemainResetTest(provider.Provider):
     def __init__(self, remain=2, reset=time.time()+2):
-        Provider.__init__(self)
+        provider.Provider.__init__(self)
         self.remain = remain
         self.reset = reset
 
