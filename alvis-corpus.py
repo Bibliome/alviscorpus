@@ -19,57 +19,10 @@ import getpass
 import alviscorpus.config as config
 import alviscorpus.status as status
 import alviscorpus.document as document
-
+import alviscorpus.step as step
     
 
 
-class Step:
-    END = 'end'
-    REGISTRY = {}
-    
-    def __init__(self, name, provider):
-        if name in Step.REGISTRY:
-            raise Exception()
-        Step.REGISTRY[name] = self
-        self.name = name
-        self.logger = config.get_logger(name)
-        self.provider = provider
-
-    def enqueue(self, doc, arg=None):
-        self.provider.register(self, doc, arg)
-        doc.set_status(self.name, status.QUEUED)
-        
-    def process(self, doc, arg=None):
-        raise NotImplemented()
-
-    @staticmethod
-    def pair(value):
-        try:
-            a, b = value
-            return value
-        except TypeError:
-            return value, None
-            
-    @staticmethod
-    def get(name):
-        if name not in Step.REGISTRY:
-            raise Exception('unknown step: %s' % name)
-        return Step.REGISTRY[name]
-
-    @staticmethod
-    def init_providers():
-        for step in Step.REGISTRY.values():
-            step.provider.init()
-
-    @staticmethod
-    def close_providers():
-        for step in Step.REGISTRY.values():
-            step.provider.close()
-
-
-class StepException(Exception):
-    def __init__(self, *args, **kwargs):
-        Exception.__init__(self, *args, **kwargs)
         
             
 class Provider(threading.Thread):
@@ -85,7 +38,7 @@ class Provider(threading.Thread):
         config.logger.info('queue started: %s' % self.__class__.__name__)
         while True:
             try:
-                step, doc, arg = self.queue.get_nowait()
+                thestep, doc, arg = self.queue.get_nowait()
             except queue.Empty:
                 if self.closed:
                     config.logger.info('queue closed: %s' % self.__class__.__name__)
@@ -94,20 +47,20 @@ class Provider(threading.Thread):
                 continue
             delay = self.delay()
             if delay > 0:
-                step.logger.warning('delay %ss' % str(delay))
+                thestep.logger.warning('delay %ss' % str(delay))
             time.sleep(delay)
             try:
-              doc.set_status(step.name, status.STARTED)
-              next_name, next_arg = step.process(doc, arg)
-              doc.set_status(step.name, status.FINISHED)
+              doc.set_status(thestep.name, status.STARTED)
+              next_name, next_arg = thestep.process(doc, arg)
+              doc.set_status(thestep.name, status.FINISHED)
             except Exception as e:
-                doc.set_status(step.name, status.ERROR)
-                step.logger.warning('exception while processing %s with %s' % (doc, step.name), exc_info=True)
-                end_report_step = Step.REGISTRY[Step.END]
+                doc.set_status(thestep.name, status.ERROR)
+                thestep.logger.warning('exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
+                end_report_step = step.get(step.END)
                 end_report_step.enqueue(doc, None)
                 continue
             if next_name is not None:
-                next_step = Step.get(next_name)
+                next_step = step.get(next_name)
                 next_step.enqueue(doc, next_arg)
         
     def delay(self):
@@ -181,9 +134,9 @@ class LimitIntervalProvider(Provider):
 #
 
 
-class EndReportStep(Step):
+class EndReportStep(step.Step):
     def __init__(self):
-        Step.__init__(self, Step.END, ProviderPool.get())
+        step.Step.__init__(self, step.END, ProviderPool.get())
         outdir = config.val(config.OPT_OUTDIR)
         filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -194,7 +147,7 @@ class EndReportStep(Step):
         self.handle.flush()
         doc.dump_metadata()
         if document.decr():
-            Step.close_providers()
+            step.close_providers()
             self.handle.close()
         return None, None
 
@@ -209,25 +162,25 @@ class CheckDocumentDataProvider(ConstantDelayProvider):
     def __init__(self):
         ConstantDelayProvider.__init__(self)
 
-class CheckDOI(Step):
+class CheckDOI(step.Step):
     def __init__(self, name, with_doi, without_doi):
-        Step.__init__(self, name, CheckDocumentDataProvider)
-        self.with_doi = Step.pair(with_doi)
-        self.without_doi = Step.pair(without_doi)
+        step.Step.__init__(self, name, CheckDocumentDataProvider)
+        self.with_doi = step.pair(with_doi)
+        self.without_doi = step.pair(without_doi)
 
     def process(self, doc, arg):
         if doc.doi is None:
             return self.without_doi
         return self.with_doi
 
-class CheckMetadata(Step):
+class CheckMetadata(step.Step):
     def __init__(self, name, ns, field, with_field, without_field, without_ns):
-        Step.__init__(self, name, CheckDocumentDataProvider)
+        step.Step.__init__(self, name, CheckDocumentDataProvider)
         self.ns = ns
         self.field = field
-        self.with_field = Step.pair(with_field)
-        self.without_field = Step.pair(without_field)
-        self.without_ns = Step.pair(without_ns)
+        self.with_field = step.pair(with_field)
+        self.without_field = step.pair(without_field)
+        self.without_ns = step.pair(without_ns)
 
     def process(self, doc, arg):
         if self.ns not in doc.data:
@@ -262,12 +215,12 @@ class CrossRefProvider(LimitIntervalProvider):
             CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
         })
 
-class CrossRefBase(Step):
+class CrossRefBase(step.Step):
     _headers = None
     _proxy = None
     
     def __init__(self, name):
-        Step.__init__(self, name, CrossRefProvider)
+        step.Step.__init__(self, name, CrossRefProvider)
 
     @staticmethod
     def headers():
@@ -302,7 +255,7 @@ class CrossRefBase(Step):
     def process(self, doc, arg):
         pre = self.pre_process(doc, arg)
         if pre is not None:
-            return Step.pair(pre)
+            return step.pair(pre)
         r = requests.get(
             self.build_url(doc, arg),
             headers=CrossRefBase.headers(),
@@ -317,9 +270,9 @@ class CrossRefBase(Step):
             next_step = self.handle_404(doc, arg, r.json())
         else:
             self.logger.error(r.text)
-            raise StepException('CrossRef server returned status %d' % r.status_code)
+            raise step.StepException('CrossRef server returned status %d' % r.status_code)
         CrossRefBase.update_limit_interval(r.headers)
-        return Step.pair(next_step)
+        return step.pair(next_step)
 
     def build_url(self, doc, arg):
         return 'https://' + config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST) + self.build_url_suffix(doc, arg)
@@ -339,9 +292,9 @@ class CrossRefBase(Step):
 class CrossRef(CrossRefBase):
     def __init__(self, name, next_step, no_doi_step, not_found_step):
         CrossRefBase.__init__(self, name)
-        self.next_step = Step.pair(next_step)
-        self.no_doi_step = Step.pair(no_doi_step)
-        self.not_found_step = Step.pair(not_found_step)
+        self.next_step = step.pair(next_step)
+        self.no_doi_step = step.pair(no_doi_step)
+        self.not_found_step = step.pair(not_found_step)
 
     def pre_process(self, doc, arg):
         if doc.doi is None:
@@ -387,29 +340,29 @@ class RemainResetTest(Provider):
     def set_remain(cls, remain):
         cls._singleton.remain = remain
         
-class TestStep1(Step):
+class TestStep1(step.Step):
     def __init__(self):
-        Step.__init__(self, 'step1', RemainResetTest)
+        step.Step.__init__(self, 'step1', RemainResetTest)
 
     def process(self, doc, arg):
         self.logger.info('doing: %s' % doc)
         self.provider.set_remain(-1)
         return 'step2', 'foo'
 
-class TestStep2(Step):
+class TestStep2(step.Step):
     def __init__(self):
-        Step.__init__(self, 'step2')
+        step.Step.__init__(self, 'step2')
 
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
         #raise Exception()
-        return Step.END, 'ok'
+        return step.END, 'ok'
 
 config.load('alvis-corpus.rc')
 config.init_logger()
-cr = CrossRef('crossref', (Step.END, 'ok'), (Step.END, 'cr-no-doi'), (Step.END, 'cr-not-found'))
+cr = CrossRef('crossref', (step.END, 'ok'), (step.END, 'cr-no-doi'), (step.END, 'cr-not-found'))
 end_step = EndReportStep()
-Step.init_providers()
+step.init_providers()
 with open('test-doi.txt') as f:
     for doi in f:
         doc = document.Document()
