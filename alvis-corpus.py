@@ -66,6 +66,7 @@ class TestStep2(step.Step):
 
 config.load('alvis-corpus.rc')
 config.init_logger()
+steplib.EndReportStep(step.END)
 cr = crossref.CrossRef('crossref', (step.END, 'ok'), (step.END, 'cr-no-doi'), (step.END, 'cr-not-found'))
 step.init_providers()
 with open('test-doi.txt') as f:
@@ -73,4 +74,3 @@ with open('test-doi.txt') as f:
         doc = document.Document()
         doc.doi = doi.strip()
         cr.enqueue(doc)
-

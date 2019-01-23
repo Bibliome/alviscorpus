@@ -9,12 +9,13 @@ import alviscorpus.document as document
 
 
 class EndReportStep(step.Step):
-    def __init__(self):
-        step.Step.__init__(self, step.END, provider.pool())
+    def __init__(self, name):
+        step.Step.__init__(self, name, provider.pool())
         outdir = config.val(config.OPT_OUTDIR)
         filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
         self.handle = open(self.filepath, 'w')
+        self.logger.info('started recording in %s' % self.filepath)
 
     def process(self, doc, arg):
         self.handle.write('%s\t%s\t%s\n' % (doc, ', '.join('%s: %s'%i for i in doc.status.items() if i[0] != self.name), arg))
@@ -24,7 +25,6 @@ class EndReportStep(step.Step):
             step.close_providers()
             self.handle.close()
         return None, None
-EndReportStep()
 
     
 
@@ -64,3 +64,4 @@ class CheckMetadata(step.Step):
 
 def CheckMetadataNamespace(name, ns, with_ns, without_ns):
     return CheckMetadata(name, ns, None, with_ns, None, without_ns)
+
