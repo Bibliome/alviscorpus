@@ -16,7 +16,7 @@ def _incr():
 def decr():
     with _lock:
         Document.count -= 1
-    return decr == 0
+    return Document.count == 0
 
 class Document:
     count = 0
