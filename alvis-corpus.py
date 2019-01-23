@@ -61,12 +61,11 @@ class TestStep2(step.Step):
 
     def process(self, doc, arg):
         self.logger.info('redoing: %s (arg is %s; path is %s)' % (doc, arg, doc.status))
-        #raise Exception()
         return step.END, 'ok'
 
 config.load('alvis-corpus.rc')
 config.init_logger()
-steplib.EndReportStep(step.END)
+steplib.ReportStep(step.END, None)
 cr = crossref.CrossRef('crossref', (step.END, 'ok'), (step.END, 'cr-no-doi'), (step.END, 'cr-not-found'))
 step.init_providers()
 with open('test-doi.txt') as f:

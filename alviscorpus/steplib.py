@@ -3,14 +3,14 @@ import os.path
 import alviscorpus.config as config
 import alviscorpus.step as step
 import alviscorpus.provider as provider    
-import alviscorpus.document as document
 
 
 
 
-class EndReportStep(step.Step):
-    def __init__(self, name):
+class ReportStep(step.Step):
+    def __init__(self, name, next_step):
         step.Step.__init__(self, name, provider.pool())
+        self.next_step = step.pair(next_step)
         outdir = config.val(config.OPT_OUTDIR)
         filename = config.val(config.OPT_REPORT_FILENAME)
         self.filepath = os.path.join(outdir, filename)
@@ -21,10 +21,7 @@ class EndReportStep(step.Step):
         self.handle.write('%s\t%s\t%s\n' % (doc, ', '.join('%s: %s'%i for i in doc.status.items() if i[0] != self.name), arg))
         self.handle.flush()
         doc.dump_metadata()
-        if document.decr():
-            step.close_providers()
-            self.handle.close()
-        return None, None
+        return self.next_step
 
     
 

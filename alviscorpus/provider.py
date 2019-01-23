@@ -6,6 +6,7 @@ import itertools
 import alviscorpus.config as config
 import alviscorpus.status as status
 import alviscorpus.step as step
+import alviscorpus.document as document
 
 
 class Provider(threading.Thread):
@@ -42,7 +43,11 @@ class Provider(threading.Thread):
                 end_report_step = step.get(step.END)
                 end_report_step.enqueue(doc, None)
                 continue
-            if next_name is not None:
+            if next_name is None:
+                doc.release()
+                if document.all_released():
+                    step.close_providers()
+            else:
                 next_step = step.get(next_name)
                 next_step.enqueue(doc, next_arg)
         

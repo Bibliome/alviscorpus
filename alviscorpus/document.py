@@ -9,13 +9,7 @@ import urllib.parse
 
 _lock = threading.Lock()
 
-def _incr():
-    with _lock:
-        Document.count += 1
-
-def decr():
-    with _lock:
-        Document.count -= 1
+def all_released():
     return Document.count == 0
 
 class Document:
@@ -26,7 +20,8 @@ class Document:
         self.doi = None
         self.data = collections.defaultdict(dict)
         self.status = collections.OrderedDict()
-        _incr()
+        with _lock:
+            Document.count += 1
 
     def __str__(self):
         if self.doi is None:
@@ -59,3 +54,6 @@ class Document:
     def set_status(self, step, status):
         self.status[step] = status
 
+    def release(self):
+        with _lock:
+            Document.count -= 1
