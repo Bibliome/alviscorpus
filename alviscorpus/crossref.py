@@ -4,7 +4,6 @@ import alviscorpus.config as config
 import alviscorpus.step as step
 import alviscorpus.provider as provider    
 
-
 HEADER_LIMIT = 'X-Rate-Limit-Limit'
 HEADER_INTERVAL = 'X-Rate-Limit-Interval'
 SECTION_CROSSREF = 'crossref'
@@ -21,10 +20,14 @@ class CrossRefProvider(provider.LimitIntervalProvider):
             OPT_HOST: VAL_HOST
         })
 
-    def update_limit_interval(self, headers):
+    def _update_limit_interval(self, headers):
         if HEADER_LIMIT in headers and HEADER_INTERVAL in headers:
             self.limit = int(headers[HEADER_LIMIT])
             self.interval = int(headers[HEADER_INTERVAL][:-1])
+
+    @classmethod
+    def update_limit_interval(cls, headers):
+        cls._singleton._update_limit_interval(headers)
 
 
 _headers_cache = None
