@@ -1,62 +1,61 @@
 import requests
 
-
 import alviscorpus.config as config
 import alviscorpus.step as step
 import alviscorpus.provider as provider    
 
 
+HEADER_LIMIT = 'X-Rate-Limit-Limit'
+HEADER_INTERVAL = 'X-Rate-Limit-Interval'
+SECTION_CROSSREF = 'crossref'
+OPT_HOST = 'host'
+VAL_HOST = 'api.crossref.org'
+OPT_EMAIL = 'email'
+OPT_PROXY = 'proxy'
+
+
 class CrossRefProvider(provider.LimitIntervalProvider):
-    HEADER_LIMIT = 'X-Rate-Limit-Limit'
-    HEADER_INTERVAL = 'X-Rate-Limit-Interval'
-    SECTION_CROSSREF = 'crossref'
-    OPT_HOST = 'host'
-    VAL_HOST = 'api.crossref.org'
-    OPT_EMAIL = 'email'
-    OPT_PROXY = 'proxy'
-    
     def __init__(self):
         provider.LimitIntervalProvider.__init__(self, 50, 1)
-        config.fill_defaults(CrossRefProvider.SECTION_CROSSREF, {
-            CrossRefProvider.OPT_HOST: CrossRefProvider.VAL_HOST
+        config.fill_defaults(SECTION_CROSSREF, {
+            OPT_HOST: VAL_HOST
         })
 
+    def update_limit_interval(self, headers):
+        if HEADER_LIMIT in headers and HEADER_INTERVAL in headers:
+            self.limit = int(headers[HEADER_LIMIT])
+            self.interval = int(headers[HEADER_INTERVAL][:-1])
+
+
+_headers_cache = None
+def get_headers():
+    global _headers_cache
+    if _headers_cache is None:
+        _headers_cache = {
+            'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % config.val(SECTION_CROSSREF, OPT_EMAIL),
+            'Accept': '*/*',
+            'Host': config.val(SECTION_CROSSREF, OPT_HOST)
+        }
+    return _headers_cache
+
+# workaround automatic insertion of basic auth by requests
+def auth(h):
+    return h
+
+_proxy_cache = None
+def get_proxy():
+    global _proxy_cache
+    if _proxy_cache is None:
+        if config.has(SECTION_CROSSREF, OPT_PROXY):
+            proxy_name = config.val(SECTION_CROSSREF, OPT_PROXY)
+            _proxy_cache = config.proxy(proxy_name)
+        else:
+            _proxy_cache = {}
+    return _proxy_cache
+
 class CrossRefBase(step.Step):
-    _headers = None
-    _proxy = None
-    
     def __init__(self, name):
         step.Step.__init__(self, name, CrossRefProvider)
-
-    @staticmethod
-    def headers():
-        if CrossRefBase._headers is None:
-            CrossRefBase._headers = {
-                'User-Agent': 'alviscorpus/0.0.1 (https://github.com/Bibliome/alviscorpus; mailto: %s)' % config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_EMAIL),
-                'Accept': '*/*',
-                'Host': config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST)
-            }
-        return CrossRefBase._headers
-
-    @staticmethod
-    def proxy():
-        if CrossRefBase._proxy is None:
-            if config.has(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY):
-                proxy_name = config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_PROXY)
-                CrossRefBase._proxy = config.proxy(proxy_name)
-            else:
-                CrossRefBase._proxy = {}
-        return CrossRefBase._proxy
-                
-    @staticmethod
-    def auth(h):
-        return h
-
-    @staticmethod
-    def update_limit_interval(headers):
-        if CrossRefProvider.HEADER_LIMIT in headers and CrossRefProvider.HEADER_INTERVAL in headers:
-            CrossRefProvider._singleton.limit = int(headers[CrossRefProvider.HEADER_LIMIT])
-            CrossRefProvider._singleton.interval = int(headers[CrossRefProvider.HEADER_INTERVAL][:-1])
     
     def process(self, doc, arg):
         pre = self.pre_process(doc, arg)
@@ -64,9 +63,9 @@ class CrossRefBase(step.Step):
             return step.pair(pre)
         r = requests.get(
             self.build_url(doc, arg),
-            headers=CrossRefBase.headers(),
-            auth=CrossRefBase.auth,
-            proxies=CrossRefBase.proxy()
+            headers=get_headers(),
+            auth=auth,
+            proxies=get_proxy()
         )
         self.logger.debug('CrossRef request: %s' % r.url)
         self.logger.debug('CrossRef request headers: %s' % r.request.headers)
@@ -77,11 +76,11 @@ class CrossRefBase(step.Step):
         else:
             self.logger.error(r.text)
             raise step.StepException('CrossRef server returned status %d' % r.status_code)
-        CrossRefBase.update_limit_interval(r.headers)
+        self.provider.update_limit_interval(r.headers)
         return step.pair(next_step)
 
     def build_url(self, doc, arg):
-        return 'https://' + config.val(CrossRefProvider.SECTION_CROSSREF, CrossRefProvider.OPT_HOST) + self.build_url_suffix(doc, arg)
+        return 'https://' + config.val(SECTION_CROSSREF, OPT_HOST) + self.build_url_suffix(doc, arg)
 
     def pre_process(self, doc, arg):
         raise NotImplemented()
@@ -94,7 +93,8 @@ class CrossRefBase(step.Step):
 
     def handle_404(self, doc, arg, json):
         raise NotImplemented()
-        
+
+
 class CrossRef(CrossRefBase):
     def __init__(self, name, next_step, no_doi_step, not_found_step):
         CrossRefBase.__init__(self, name)
