@@ -42,17 +42,15 @@ class Provider(threading.Thread):
               doc.set_status(thestep.name, status.FINISHED)
             except Exception as e:
                 doc.set_status(thestep.name, status.ERROR)
-                thestep.logger.warning('exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
-                end_report_step = step.get(step.END)
-                end_report_step.enqueue(doc, None)
+                thestep.logger.warning('unhandled exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
+                step.enqueue(step.END, doc, None)
                 continue
             if next_name is None:
                 doc.release()
                 if document.all_released():
                     step.close_providers()
             else:
-                next_step = step.get(next_name)
-                next_step.enqueue(doc, next_arg)
+                step.enqueue(next_name, doc, next_arg)
 
     def get_next(self):
         try:

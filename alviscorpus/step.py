@@ -36,6 +36,10 @@ def get(name):
         raise Exception('unknown step: %s' % name)
     return _registry[name]
 
+def enqueue(name, doc, arg=None):
+    thestep = get(END)
+    thestep.enqueue(doc, arg)
+
 def init_providers():
     for step in _registry.values():
         step.provider.init()
