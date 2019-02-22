@@ -41,17 +41,23 @@ class Provider(threading.Thread):
               next_name, next_arg = thestep.process(doc, arg)
               doc.set_status(thestep.name, status.FINISHED)
             except Exception as e:
-                doc.set_status(thestep.name, status.ERROR)
-                thestep.logger.warning('unhandled exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
-                step.enqueue(step.END, doc, None)
+                self.doc_error(thestep, doc)
                 continue
             if next_name is None:
-                doc.release()
-                if document.all_released():
-                    step.close_providers()
+                self.doc_end(doc)
             else:
                 step.enqueue(next_name, doc, next_arg)
 
+    def doc_end(self, doc):
+        doc.release()
+        if document.all_released():
+            step.close_providers()
+                
+    def doc_error(self, thestep, doc):
+        doc.set_status(thestep.name, status.ERROR)
+        thestep.logger.warning('unhandled exception while processing %s with %s' % (doc, thestep.name), exc_info=True)
+        step.end(doc, None)
+                
     def get_next(self):
         try:
             return self.queue.get_nowait()

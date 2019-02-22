@@ -40,6 +40,9 @@ def enqueue(name, doc, arg=None):
     thestep = get(END)
     thestep.enqueue(doc, arg)
 
+def end(doc, arg=None):
+    enqueue(END, doc, arg)
+
 def init_providers():
     for step in _registry.values():
         step.provider.init()
