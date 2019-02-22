@@ -75,7 +75,7 @@ class CrossRefBase(step.Step):
         if r.status_code == 200:
             next_step = self.handle_200(doc, arg, r.json())
         elif r.status_code == 404:
-            next_step = self.handle_404(doc, arg, r.json())
+            next_step = self.handle_404(doc, arg, r.text)
         else:
             self.logger.error(r.text)
             raise step.StepException('CrossRef server returned status %d' % r.status_code)
