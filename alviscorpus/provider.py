@@ -9,6 +9,14 @@ import alviscorpus.step as step
 import alviscorpus.document as document
 
 
+class EmptyQueue(Exception):
+    def __init__(self, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+
+class ClosedQueue(Exception):
+    def __init__(self, *args, **kwargs):
+        Exception.__init__(self, *args, **kwargs)
+
 class Provider(threading.Thread):
     _singleton = None
     
@@ -22,17 +30,12 @@ class Provider(threading.Thread):
         config.logger.info('queue started: %s' % self.__class__.__name__)
         while True:
             try:
-                thestep, doc, arg = self.queue.get_nowait()
-            except queue.Empty:
-                if self.closed:
-                    config.logger.info('queue closed: %s' % self.__class__.__name__)
-                    break
-                time.sleep(0)
+                thestep, doc, arg = self.get_next()
+            except EmptyQueue:
                 continue
-            delay = self.delay()
-            if delay > 0:
-                thestep.logger.warning('delay %ss' % str(delay))
-            time.sleep(delay)
+            except ClosedQueue:
+                break
+            self.wait(thestep.logger)
             try:
               doc.set_status(thestep.name, status.STARTED)
               next_name, next_arg = thestep.process(doc, arg)
@@ -50,7 +53,23 @@ class Provider(threading.Thread):
             else:
                 next_step = step.get(next_name)
                 next_step.enqueue(doc, next_arg)
-        
+
+    def get_next(self):
+        try:
+            return self.queue.get_nowait()
+        except queue.Empty:
+            if self.closed:
+                config.logger.info('queue closed: %s' % self.__class__.__name__)
+                raise ClosedQueue()
+            time.sleep(0)
+            raise EmptyQueue()
+
+    def wait(self, logger):
+        delay = self.delay()
+        if delay > 0:
+            logger.warning('delay %ss' % str(delay))
+        time.sleep(delay)
+
     def delay(self):
         raise NotImplemented()
 
