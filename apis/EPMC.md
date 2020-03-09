@@ -39,3 +39,7 @@ https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={query}
 ### Fields and sources
 
 https://europepmc.org/docs/EBI_Europe_PMC_Web_Service_Reference.pdf
+
+## Bulk download
+
+https://europepmc.org/downloads
